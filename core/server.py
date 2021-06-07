@@ -38,7 +38,6 @@ class Server:
         self.serverFolder = os.path.join(self.defaultFolder, 'Servers')
         self.hostName = self.setup['hostname']
         self.userName = os.popen('whoami').readline().split('\n')[0]
-
         if not os.path.isdir(self.serverFolder):
             os.makedirs(self.serverFolder)
         self.status_file = os.path.join(self.serverFolder, self.hostName+'.json')
@@ -46,24 +45,19 @@ class Server:
         self.factoryFolder = self.setup['factory']
         self.deliveryFolder = self.setup['delivery']
         self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
-#        self.finishedTaskFolder = os.path.join(self.mainFolder, 'FinishedTasks')
-#        self.taskFilePath = os.path.join(self.mainFolder, 'TaskList.xlsx')
-#        numCPULimit = int(os.environ.get('OMP_NUM_THREADS'))
-#        self.pool = ThreadPool(numCPULimit)
         self.excludedFolder=['Output', 'NewTasks', 'FinishedTasks', '.git']
-        self.initialise()
-        self.updateServerStatus()
-        self.writeServerStatus()
-        # unfinished tasks
-        # new tasks
-        
-    def initialise(self):
         statusDict = OrderedDict()
         statusDict['name'] = self.hostName
         statusDict['user'] = self.userName
         statusDict['currentSessions'] = OrderedDict()
         statusDict['finishedSessions'] = OrderedDict()
         self.statusDict = statusDict
+    
+    def onStartTask(self):
+        sessions = self.getFinishedSessions()
+        self.markFinishedSession(sessions)
+        pass
+
     
     def writeServerStatus(self):
         with open(self.status_file, "w+") as outfile: 
@@ -94,21 +88,39 @@ class Server:
             os.chdir(self.factoryFolder)
             eng = matlab.engine.start_matlab()
             for session in  sessions:
-                matFolder = os.path.join(obj.matFolderPath, session, 'data')
+                matFolder = os.path.join(self.matFolderPath, session, 'data')
                 matList = os.listdir(matFolder)
                 if len(matList) > 0:
                     matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
                     targetMatIdx = matModifiedTime.index(max(matModifiedTime))
                     targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
+                    print("Loading {}".format(targetMatPath))
+                    [output, session_name]  = eng.postProcessHandles(targetMatPath, nargout=2)
+                    if output['Finished'] == 1.0:
+                        key = self.taskTimeStr+'_'+session_name
+                        self.statusDict['finishedSessions'][key] = output
+                        print("{} is marked".format(key))
+            os.chdir(self.defaultFolder) 
+            eng.exit()
                     
     
     def getFinishedSessions(self):
         sessions = os.listdir(self.matFolderPath)
         finishedSessions = []
         for session in sessions:
-            if session not in self.statusDict['finishedSessions']:
+            key = self.taskTimeStr+'_'+session
+            if key not in self.statusDict['finishedSessions']:
                 finishedSessions.append(session)
         return finishedSessions
+    
+    def getRunningSessions(self):
+        outputFolder = os.path.join(self.factoryFolder, 'Output')
+        runningSessions = os.listdir(outputFolder)
+        runningSessions = [session for session in runningSessions if session.startswith('Task-')]
+        return runningSessions
+    
+    def getUnfinishedSessions(self):
+        pass
     
     def removeFinishedInputs(self, df):
         finishedSessions = os.listdir(self.matFolderPath)
@@ -218,7 +230,7 @@ class Server:
             df.index = index
             return df
     
-    def runSimulation(self):
+    def onInterval(self):
         taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
         cleanTask = self.hostName+'_clean.json'
         # clean previous task results
@@ -229,62 +241,76 @@ class Server:
             os.unlink(os.path.join(self.newTaskFolder, cleanTask))
         for task in taskList:
             # announce the start of simulation
+            self.updateTaskFolderPath(task)
             df = self.getTaskTable(task)
             df = self.removeFinishedInputs(df)
 #            output_path = os.path.join(self.finishedTaskFolder, task)
             print("Working on {}".format(task))
             # sync folder to make sure new implementation is avaiable
-            self.prepareFactory()
+#            self.prepareFactory()
             # create task folder in factory folder
-            self.updateTaskFolderPath(task)
+            
 #            self.taskFolderPath = taskFolderPath
 #            if os.path.exists(taskFolderPath):
 #                shutil.rmtree(taskFolderPath)
             if not os.path.exists(self.taskFolderPath):
                 os.makedirs(self.taskFolderPath)
+                
+            self.onStartTask()
+            '''
+            TODO: 
+                1. build inputs for nwe task
+                2. build inputs for unfinished task
+                3. update finishedSession after finishing a task
+            '''
+            
+        sleepMins(3)# wait for the starting of simulation
+        self.updateServerStatus()
+        self.writeServerStatus()
             # copy task file to task folder
 #            copiedTaskFile = os.path.join(self.taskFolderPath, 'TaskList.xlsx')
 #            if not os.path.isfile(copiedTaskFile)
 #                shutil.copyfile(self.taskFilePath, copiedTaskFile)
             
             # cd to factory folder to start the simulation
-            os.chdir(self.factoryFolder)
-            # load inputs and run simulation
-            df = pd.read_json(input_path)
-            with open(input_path, 'rb') as f:
-                [input_all, taskIdx] = pickle.load(f)
-                # remove finished inputs
-                input_all, taskIdx = self.removeFinishedInputs(input_all, taskIdx)
-                # buil unfinished tasks
-                input_all = self.buildUnfinishedInputs(input_all)
-#                results_old = self.pool.map(self.runMatlabUnfinishedTasks, unfinishedMats)
-                # run rest inputs
-                results = self.pool.map(self.runMatlabTasks, input_all)
-#                print(input_all)
-#                results = []
-#                for inputs in input_all:
-#                    result = self.callMatlab(inputs)
-#                    results.append(result)
-                taskTable = pd.read_excel(copiedTaskFile, sheet_name = 'Sheet1')  
-                taskTable = markFinishedTasks(taskTable, results, taskIdx)
-                self.writeTasktable(copiedTaskFile, taskTable)
-                shutil.move(input_path, output_path)#remove new task to finished
-                
-
-            if not os.path.isfile(self.summaryFilePath):
-                print(copiedTaskFile)
-                print(self.summaryFilePath)
-                shutil.copyfile(copiedTaskFile, self.summaryFilePath)
+#            os.chdir(self.factoryFolder)
+#            # load inputs and run simulation
+#            df = pd.read_json(input_path)
+#            with open(input_path, 'rb') as f:
+#                [input_all, taskIdx] = pickle.load(f)
+#                # remove finished inputs
+#                input_all, taskIdx = self.removeFinishedInputs(input_all, taskIdx)
+#                # buil unfinished tasks
+#                input_all = self.buildUnfinishedInputs(input_all)
+##                results_old = self.pool.map(self.runMatlabUnfinishedTasks, unfinishedMats)
+#                # run rest inputs
+#                results = self.pool.map(self.runMatlabTasks, input_all)
+##                print(input_all)
+##                results = []
+##                for inputs in input_all:
+##                    result = self.callMatlab(inputs)
+##                    results.append(result)
+#                taskTable = pd.read_excel(copiedTaskFile, sheet_name = 'Sheet1')  
+#                taskTable = markFinishedTasks(taskTable, results, taskIdx)
+#                self.writeTasktable(copiedTaskFile, taskTable)
+#                shutil.move(input_path, output_path)#remove new task to finished
+#                
+#
+#            if not os.path.isfile(self.summaryFilePath):
+#                print(copiedTaskFile)
+#                print(self.summaryFilePath)
+#                shutil.copyfile(copiedTaskFile, self.summaryFilePath)
 #                sourceFolder = os.path.join(self.factoryFolder, 'Output')
 #                copy_tree(sourceFolder, self.taskFolderPath)
 #                self.cleanFolder(sourceFolder)
             # cd back to default folder for next simulation
-            os.chdir(self.defaultFolder)
+
+#            os.chdir(self.defaultFolder)
     
     def main(self):
         numMin = random.randint(3,10)
         try:
-            self.runSimulation()
+            self.onInterval()
             nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")
             msg = "{}: Sleeping for {} mins".format(nowTimeStr, numMin)
             print(msg)
