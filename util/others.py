@@ -32,8 +32,10 @@ def getProcessList():
     for proc in psutil.process_iter():
         try:
             # Get process name & pid from process object.
+#            cpu_percent = proc.cpu_percent(interval=0.01)
+#            print(cpu_percent)
             data.append([proc.pid, proc.username(), proc.name(),
-                     proc.cpu_percent(), proc.memory_percent(), proc.exe()])
+                     0, proc.memory_percent(), proc.exe()])
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
     return pd.DataFrame(data=data, columns=columns)
