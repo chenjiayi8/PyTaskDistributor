@@ -121,6 +121,7 @@ class Server:
                     [output, session_name]  = eng.postProcessHandlesV2(targetMatPath, nargout=2)
                     key = self.taskTimeStr+'_'+session_name
                     if output['Finished'] == 1.0:
+                        output['Comments'] = os.path.basename(targetMatPath)
                         self.statusDict['finishedSessions'][key] = output
                         print("{} is marked".format(key))
                     else:
@@ -274,14 +275,6 @@ class Server:
     def getTaskTable(self, task):
         input_path = os.path.join(self.newTaskFolder, task)
         df = readJSON_to_df(input_path)
-#        with open(input_path, 'r') as f:
-##                json_data = json.load(f)
-#            json_str = f.readlines()
-#            json_str = '\n'.join(json_str)
-#            json_dict = customdecoder.decode(json_str)
-##            json_str = pd.factorize
-#            df = pd.read_json(json_str)
-#            df = df[list(json_dict.keys())]
         df = df.sort_values('Num')
         temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
         index = ['-'.join(t) for t in temp]

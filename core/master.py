@@ -52,6 +52,8 @@ class Master:
             if self.lastModifiedTime != self.getFileLastModifiedTime():
                 self.generateTasks()
                 
+            self.updateServerList()
+            self.updateTaskStatus()
             self.workloadBalance()
             lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, 
                                                       "%H:%M:%S %d/%m/%Y")
@@ -82,6 +84,10 @@ class Master:
                 for cell in row:
                     cell.value = None
     
+    def getTaskList(self):
+        taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
+        return taskList
+    
     def updateServerList(self, timeout_mins=30):
         serverList = [file for file in os.listdir(self.serverFolder) if file.endswith(".json")]
         self.serverList = []
@@ -94,8 +100,7 @@ class Master:
                 self.serverList.append(s_json)
                 
     def workloadBalance(self):
-        self.updateServerList()
-        taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
+        taskList = self.getTaskList()
         task = random.choice(taskList)#Only balance one task per time
         task_path = os.path.join(self.newTaskFolder, task)
         df = readJSON_to_df(task_path)
@@ -125,6 +130,45 @@ class Master:
                     df.loc[intialTaskIdx[i], 'HostName'] = server['name']
         writeJSON_from_df(task_path, df)
     
+    def getFinishedSessions(self):
+        finishedSessions = {}
+        for server in self.serverList:   
+            tempDict = server['finishedSessions']
+            for _, v in tempDict.items():
+                v['HostName'] = server['name']
+            finishedSessions.update(tempDict)
+        return finishedSessions
+    
+    def updateTaskStatus(self):
+        taskList = self.getTaskList()
+        finishedSessions = self.getFinishedSessions()
+        for task in taskList:
+            path = os.path.join(self.newTaskFolder, task)
+            path_xlsx = os.path.join(self.mainFolder, 'Output', task[:-5]+'.xlsx')
+            df = readJSON_to_df(path)
+            df = df.sort_values('Num')
+            temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
+            index = ['-'.join(t) for t in temp]
+            df.index = index
+            df = df.fillna('')
+            modified_flag = False
+            for key in finishedSessions.keys():
+                underlineLocs = [i for i, ltr in enumerate(key) if ltr == '_']
+                taskTimeStr = key[:underlineLocs[1]]
+                index = key[underlineLocs[1]+1:]
+                if taskTimeStr in task and index in df.index:
+                    if df.loc[index, 'Finished'] != 1:#only modify when necessary
+                        values = finishedSessions[key]
+                        modified_flag = True
+                        for k, v in values.items():
+                            df.loc[index, k] = v
+            if modified_flag:
+                writeJSON_from_df(path, df)
+                self.updateXlsxFile(path_xlsx, df)
+        
+    def updateXlsxFile(path_xlsx, df):
+        pass
+    
     def generateTasks(self):
         self.lastModifiedTime = self.getFileLastModifiedTime()
         lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, "%Y%m%d_%H%M%S")
@@ -135,17 +179,9 @@ class Master:
         if os.path.isfile(newJsonName):# already created
             return
         parameterTable = pd.read_excel(self.taskFilePath, sheet_name='ParameterRange')
-#        Helper.printTable(parameterTable, 'parameterTable')
         parameterIdxs = list(range(0,5))+list(range(7,15+5))
         parameterNames = list(parameterTable.columns)
         parameterNames_Target = [parameterNames[i] for i in parameterIdxs]
-#        ServerNameList = parameterTable.loc[:, 'ServerName']
-#        ServerNameList = [name for name in ServerNameList if type(name) == str]
-#        ServerFactorList = parameterTable.loc[:, 'ServerFactor']
-#        ServerFactorList = [factor for factor in ServerFactorList if not np.isnan(factor)]
-#        ServerFactorArray = np.array(ServerFactorList)
-#        ServerFactorArray = ServerFactorArray/sum(ServerFactorArray)
-#        numServerName = len(ServerNameList)
         numTotalTask = 1;
         for name in parameterNames_Target:
             vector = parameterTable.loc[:, name]
@@ -164,20 +200,6 @@ class Master:
         combinations = list(prod(*vectorList))
         combinations = [[i+1]+list(combinations[i]) for i in range(len(combinations))]
         taskTable = pd.DataFrame(data=combinations, columns=columns)
-#        numTasks = len(taskTable)
-#        numTaskPerServer = math.floor(numTasks/numServerName)
-#        numLastServer = numTasks - (numServerName-1)*numTaskPerServer
-        
-#        ServerTasks = [];
-#        numAssignedTasks = 0
-#        for i in range(numServerName-1):
-#            numTaskThisServer = int(round(numTasks*ServerFactorArray[i]))
-#            numAssignedTasks += numTaskThisServer
-#            ServerTasks += [ServerNameList[i]]*numTaskThisServer
-#        
-#        if numTasks > numAssignedTasks:
-#            ServerTasks += [ServerNameList[-1]]*(numTasks-numAssignedTasks)
-#        taskTable['ServerName'] = ServerTasks
         taskTable_old = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
         columns_old = list(taskTable_old.columns)
         areSameTasks = True
@@ -205,17 +227,11 @@ class Master:
         if not areSameTasks:
             taskTable_new = pd.DataFrame(columns=columns_old)
             taskTable_new = pd.concat([taskTable, taskTable_new], axis=1)
-#            for column in taskTable.columns:
-#                print(len(taskTable_old.loc[:numTasks, column]))
-#                print(taskTable.loc[:, column])
-#                taskTable_new.loc[:numTasks, column] = taskTable.loc[:, column]
-#            taskTable_new.loc[list(range(numTasks, len(columns_old))), :] = ''
             self.emptySheetExcludeHeaders(writer.book['Sheet1'])
             taskTable_new.to_excel(writer, sheet_name='Sheet1', startrow=1, header=False,index=False)
             writer.save()
         
         taskTable = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
-        
         newXlsxName = os.path.join(self.mainFolder, 'Output', 'TaskList_'+lastModifiedTimeStr+'.xlsx')
         writeJSON_from_df(newJsonName, taskTable)
         shutil.copyfile(self.taskFilePath, newXlsxName)
