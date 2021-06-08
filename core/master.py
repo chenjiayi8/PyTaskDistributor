@@ -8,7 +8,7 @@ Created on Sat Jul 18 10:05:04 2020
 
 from PyTaskDistributor.util.json import (
         readJSON_to_df, writeJSON_from_df, readJSON_to_dict)
-
+from PyTaskDistributor.util.others import updateXlsxFile
 import os
 import sys
 from datetime import datetime
@@ -164,10 +164,8 @@ class Master:
                             df.loc[index, k] = v
             if modified_flag:
                 writeJSON_from_df(path, df)
-                self.updateXlsxFile(path_xlsx, df)
+                updateXlsxFile(path_xlsx, df)
         
-    def updateXlsxFile(path_xlsx, df):
-        pass
     
     def generateTasks(self):
         self.lastModifiedTime = self.getFileLastModifiedTime()
@@ -219,17 +217,19 @@ class Master:
         
         taskTable['UUID'] = ''
         taskTable.loc[:, 'UUID'] = taskTable.loc[:, 'UUID'].apply(getUUID)
-        book = load_workbook(self.taskFilePath)
-        writer = pd.ExcelWriter(self.taskFilePath, engine='openpyxl')
-        writer.book = book
-        writer.sheets = {ws.title: ws for ws in book.worksheets}
+#        book = load_workbook(self.taskFilePath)
+#        writer = pd.ExcelWriter(self.taskFilePath, engine='openpyxl')
+#        writer.book = book
+#        writer.sheets = {ws.title: ws for ws in book.worksheets}
         
         if not areSameTasks:
             taskTable_new = pd.DataFrame(columns=columns_old)
             taskTable_new = pd.concat([taskTable, taskTable_new], axis=1)
-            self.emptySheetExcludeHeaders(writer.book['Sheet1'])
-            taskTable_new.to_excel(writer, sheet_name='Sheet1', startrow=1, header=False,index=False)
-            writer.save()
+            
+#            self.emptySheetExcludeHeaders(writer.book['Sheet1'])
+#            taskTable_new.to_excel(writer, sheet_name='Sheet1', startrow=1, header=False,index=False)
+#            writer.save()
+            updateXlsxFile(self.taskFilePath, taskTable_new)
         
         taskTable = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
         newXlsxName = os.path.join(self.mainFolder, 'Output', 'TaskList_'+lastModifiedTimeStr+'.xlsx')
