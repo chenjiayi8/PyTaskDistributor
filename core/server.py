@@ -7,8 +7,10 @@ Created on Fri Jun  4 13:21:08 2021
 """
 
 from PyTaskDistributor.util.others import (
-        sleepMins, markFinishedTasks, getProcessList)
-
+        sleepMins, markFinishedTasks, getProcessList,
+        getProcessCPU)
+from PyTaskDistributor.util.json import (
+        writeJSON_from_dict, readJSON_to_df, readJSON_to_dict)
 import os
 import sys
 from datetime import datetime
@@ -34,6 +36,8 @@ customdecoder = JSONDecoder(object_pairs_hook=OrderedDict)
 class Server:
     def __init__(self, setup):
         self.setup = setup
+        self.CPU_percent_max = float(setup['CPU_max'])*100
+        self.MEM_percent_max = float(setup['MEM_max'])*100
         self.defaultFolder = os.getcwd()
         self.serverFolder = os.path.join(self.defaultFolder, 'Servers')
         self.hostName = self.setup['hostname']
@@ -46,33 +50,45 @@ class Server:
         self.deliveryFolder = self.setup['delivery']
         self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
         self.excludedFolder=['Output', 'NewTasks', 'FinishedTasks', '.git']
-        statusDict = OrderedDict()
-        statusDict['name'] = self.hostName
-        statusDict['user'] = self.userName
-        statusDict['currentSessions'] = OrderedDict()
-        statusDict['finishedSessions'] = OrderedDict()
-        self.statusDict = statusDict
+        self.initialise()
+
+    
+    def initialise(self):
+        if os.path.isfile(self.status_file):
+            self.statusDict = readJSON_to_dict(self.status_file)
+        else:
+            statusDict = OrderedDict()
+            statusDict['name'] = self.hostName
+            statusDict['user'] = self.userName
+            statusDict['CPU_max'] = self.CPU_percent_max
+            statusDict['MEM_max'] = self.MEM_percent_max
+            statusDict['msg'] = ''
+            statusDict['currentSessions'] = OrderedDict()
+            statusDict['finishedSessions'] = OrderedDict()
+            self.statusDict = statusDict
+        self.updateServerStatus()
+        self.writeServerStatus()
+            
     
     def onStartTask(self):
         sessions = self.getFinishedSessions()
-        self.markFinishedSession(sessions)
-        pass
-
+        if sessions:
+            self.markFinishedSession(sessions)
+            self.writeServerStatus()
     
     def writeServerStatus(self):
-        with open(self.status_file, "w+") as outfile: 
-            json.dump(self.statusDict, outfile, indent = 4)
+        writeJSON_from_dict(self.status_file, self.statusDict)
     
     def updateServerStatus(self):
         df = getProcessList()
         df_user = df[df['User']==self.userName]
         df_matlab = df_user[df_user['Command'].apply(lambda x: 'matlab' in x.lower())]
         self.statusDict['CPU_total'] = str(round(psutil.cpu_percent(interval=1), 2))
-        self.statusDict['Mem_total'] = str(round(sum(df['Mem']), 2))
+        self.statusDict['MEM_total'] = str(round(sum(df['Mem']), 2))
         if len(df_matlab) > 0:
             df_matlab = df_matlab.reset_index(drop=True)
             #measure the CPU usage of my matlab process
-            df_matlab['CPU'] = df_matlab['pid'].apply(lambda p: psutil.Process(p).cpu_percent(interval=1))
+            df_matlab['CPU'] = df_matlab['pid'].apply(getProcessCPU)
             self.statusDict['num_matlab'] = str(len(df_matlab))
             self.statusDict['CPU_matlab'] = str(round(sum(np.array(df_matlab['CPU'])/100), 2))
             self.statusDict['MEM_matlab'] = str(round(sum(df_matlab['Mem']), 2))
@@ -85,44 +101,76 @@ class Server:
     
     def markFinishedSession(self, sessions):
         if len(sessions) > 0:
-            os.chdir(self.factoryFolder)
-            eng = matlab.engine.start_matlab()
-            for session in  sessions:
-                matFolder = os.path.join(self.matFolderPath, session, 'data')
-                matList = os.listdir(matFolder)
-                if len(matList) > 0:
-                    matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
-                    targetMatIdx = matModifiedTime.index(max(matModifiedTime))
-                    targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
+            targetMatPaths = []
+            for session in sessions:
+                key = self.taskTimeStr+'_'+session
+                if key not in self.statusDict['finishedSessions']:
+                    matFolder = os.path.join(self.matFolderPath, session, 'data')
+                    if os.path.isdir(matFolder):
+                        matList = os.listdir(matFolder)
+                        if len(matList) > 0:
+                            matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
+                            targetMatIdx = matModifiedTime.index(max(matModifiedTime))
+                            targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
+                            targetMatPaths.append(targetMatPath)
+            if len(targetMatPaths) > 0:
+                os.chdir(self.factoryFolder)
+                eng = matlab.engine.start_matlab()
+                for targetMatPath in targetMatPaths:
                     print("Loading {}".format(targetMatPath))
-                    [output, session_name]  = eng.postProcessHandles(targetMatPath, nargout=2)
+                    [output, session_name]  = eng.postProcessHandlesV2(targetMatPath, nargout=2)
+                    key = self.taskTimeStr+'_'+session_name
                     if output['Finished'] == 1.0:
-                        key = self.taskTimeStr+'_'+session_name
                         self.statusDict['finishedSessions'][key] = output
                         print("{} is marked".format(key))
-            os.chdir(self.defaultFolder) 
-            eng.exit()
+                    else:
+                        msg = "Mark {} with err message {}\n".format(targetMatPath, output['err_msg'])
+                        self.statusDict['msg'] += msg
+                        print(msg)
+                os.chdir(self.defaultFolder) 
+                eng.exit()
                     
     
     def getFinishedSessions(self):
-        sessions = os.listdir(self.matFolderPath)
-        finishedSessions = []
-        for session in sessions:
-            key = self.taskTimeStr+'_'+session
-            if key not in self.statusDict['finishedSessions']:
-                finishedSessions.append(session)
-        return finishedSessions
+        if os.path.isdir(self.matFolderPath):
+            sessions = os.listdir(self.matFolderPath)
+            finishedSessions = []
+            for session in sessions:
+                key = self.taskTimeStr+'_'+session
+                if key not in self.statusDict['finishedSessions']:
+                    finishedSessions.append(session)
+            return finishedSessions
+        else:
+            return None
     
     def getRunningSessions(self):
         outputFolder = os.path.join(self.factoryFolder, 'Output')
         runningSessions = os.listdir(outputFolder)
         runningSessions = [session for session in runningSessions if session.startswith('Task-')]
-        return runningSessions
+        return runningSessions, outputFolder
     
-    def getUnfinishedSessions(self):
-        pass
+    def getUnfinishedMatPaths(self, df):
+        runningSessions, outputFolder = self.getRunningSessions()
+        unfinishedMatPaths = []
+        unwantedInputs = []
+        for session in runningSessions:
+            if session not in self.statusDict['currentSessions']:
+                matFolder = os.path.join(outputFolder, session, 'data')
+                matList = os.listdir(matFolder)
+                if len(matList) > 0:
+                    matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
+                    targetMatIdx = matModifiedTime.index(max(matModifiedTime))
+                    targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
+                    unfinishedMatPaths.append(targetMatPath)
+                    if session in df.index:
+                        unwantedInputs.append(session)
+        df2 = df.drop(unwantedInputs)
+        return df2, unfinishedMatPaths
+    
     
     def removeFinishedInputs(self, df):
+        if len(df) == 0:
+            return df
         finishedSessions = os.listdir(self.matFolderPath)
         unwantedInputs = []
         for session in finishedSessions:
@@ -130,15 +178,27 @@ class Server:
                 unwantedInputs.append(session)
         df2 = df.drop(unwantedInputs)
         return df2
-#        for i in range(len(input_all)):
-#            inputs = input_all[i]
-#            taskname = 'Task-'+str(inputs[0])+'-'+ inputs[-1]
-#            if taskname in finishedTasks:
-#                unwantedInputs.append(inputs)
-#                unwantedTaskIdx.append(taskIdx[i])
-#        input_all = [inputs for inputs  in input_all if inputs not in unwantedInputs]
-#        taskIdx   = [idx for idx in taskIdx if idx not in unwantedTaskIdx]
-#        return input_all, taskIdx
+    
+    def createInputs(self, df):
+        runningSessions, outputFolder = self.getRunningSessions()
+        inputs = []
+        unfinishedMatPaths = []
+        unwantedInputs = []
+        for i in range(len(df)):
+            session = df.index(i)
+        for session in runningSessions:
+            if session not in self.statusDict['currentSessions']:
+                matFolder = os.path.join(outputFolder, session, 'data')
+                matList = os.listdir(matFolder)
+                if len(matList) > 0:
+                    matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
+                    targetMatIdx = matModifiedTime.index(max(matModifiedTime))
+                    targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
+                    unfinishedMatPaths.append(targetMatPath)
+                    if session in df.index:
+                        unwantedInputs.append(session)
+        df2 = df.drop(unwantedInputs)
+        return df2, unfinishedMatPaths
     
     def buildUnfinishedInputs(self, input_all):
         outputFolder = os.path.join(self.factoryFolder, 'Output')
@@ -198,9 +258,6 @@ class Server:
         self.taskFolderPath = os.path.join(self.deliveryFolder, 'Output', timeStr)
         self.matFolderPath = os.path.join(self.factoryFolder, 'Output', timeStr)
         self.taskTimeStr = timeStr
-#        summaryFilePath = os.path.join(self.mainFolder, 'Output',
-#                   'TaskList_'+timeStr+'_'+self.hostName+'.xlsx')
-#        return taskFolderPath, matFolderPath
     
     def cleanFolder(self, folerName):
         if os.path.isdir(folerName):
@@ -216,19 +273,22 @@ class Server:
     
     def getTaskTable(self, task):
         input_path = os.path.join(self.newTaskFolder, task)
-        with open(input_path, 'r') as f:
-#                json_data = json.load(f)
-            json_str = f.readlines()
-            json_str = '\n'.join(json_str)
-            json_dict = customdecoder.decode(json_str)
-#            json_str = pd.factorize
-            df = pd.read_json(json_str)
-            df = df[list(json_dict.keys())]
-            df = df.sort_values('Num')
-            temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
-            index = ['-'.join(t) for t in temp]
-            df.index = index
-            return df
+        df = readJSON_to_df(input_path)
+#        with open(input_path, 'r') as f:
+##                json_data = json.load(f)
+#            json_str = f.readlines()
+#            json_str = '\n'.join(json_str)
+#            json_dict = customdecoder.decode(json_str)
+##            json_str = pd.factorize
+#            df = pd.read_json(json_str)
+#            df = df[list(json_dict.keys())]
+        df = df.sort_values('Num')
+        temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
+        index = ['-'.join(t) for t in temp]
+        df.index = index
+        df = df.fillna('')
+        df2 = df[df['HostName']==self.hostName]
+        return df2
     
     def onInterval(self):
         taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
@@ -241,11 +301,23 @@ class Server:
             os.unlink(os.path.join(self.newTaskFolder, cleanTask))
         for task in taskList:
             # announce the start of simulation
-            self.updateTaskFolderPath(task)
-            df = self.getTaskTable(task)
-            df = self.removeFinishedInputs(df)
-#            output_path = os.path.join(self.finishedTaskFolder, task)
             print("Working on {}".format(task))
+            self.updateTaskFolderPath(task)#paths for output
+            self.onStartTask()
+            df = self.getTaskTable(task)# check new task
+            df = self.removeFinishedInputs(df)
+#            inputs = self.createInputs(df)
+#            inputs = self.createInputs(df)
+#            inputs += unfinishedMatPaths
+            
+            # create process to run individual task on background
+            # import multiprocessing as mp
+            # Process: p1 = mp.Process(target=keepIndexUpdated) p1.start()
+            
+#            if len(df) == 0: #no
+#                break
+#            output_path = os.path.join(self.finishedTaskFolder, task)
+
             # sync folder to make sure new implementation is avaiable
 #            self.prepareFactory()
             # create task folder in factory folder
@@ -256,15 +328,16 @@ class Server:
             if not os.path.exists(self.taskFolderPath):
                 os.makedirs(self.taskFolderPath)
                 
-            self.onStartTask()
+
             '''
             TODO: 
                 1. build inputs for nwe task
                 2. build inputs for unfinished task
                 3. update finishedSession after finishing a task
             '''
-            
-        sleepMins(3)# wait for the starting of simulation
+        
+        time.sleep(1)
+#        sleepMins(3)# wait for the starting of simulation
         self.updateServerStatus()
         self.writeServerStatus()
             # copy task file to task folder

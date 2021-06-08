@@ -5,6 +5,10 @@ Created on Sat Jul 18 10:05:04 2020
 
 @author: frank
 """
+
+from PyTaskDistributor.util.json import (
+        readJSON_to_df, writeJSON_from_df, readJSON_to_dict)
+
 import os
 import sys
 from datetime import datetime
@@ -14,13 +18,14 @@ import numpy as np
 from itertools import product as prod
 #from Helper import Helper
 from openpyxl import load_workbook
-import pickle
+#import pickle
 import math
 import random
 import uuid
 import traceback
 import time
-import json
+#import json
+import shutil
 
 def getUUID(origin):
     rd = random.Random()
@@ -45,7 +50,9 @@ class Master:
         numMin = random.randint(1,5)
         try:
             if self.lastModifiedTime != self.getFileLastModifiedTime():
-                self.generateInputs()
+                self.generateTasks()
+                
+            self.workloadBalance()
             lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, 
                                                       "%H:%M:%S %d/%m/%Y")
             nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")
@@ -75,24 +82,57 @@ class Master:
                 for cell in row:
                     cell.value = None
     
-    def updateServerList(self):
+    def updateServerList(self, timeout_mins=30):
         serverList = [file for file in os.listdir(self.serverFolder) if file.endswith(".json")]
         self.serverList = []
         for s in serverList:
             s_path = os.path.join(self.serverFolder, s)
-            with open(s_path, 'r') as f:
-                s_json = json.load(f)
-                s_time = dateutil.parser.parse(s_json['updated_time'])
-                diff_min = (datetime.now() - s_time).seconds/60
-                if diff_min < 120:#only use if updated within N mins
-                    self.serverList.append(s_json)
+            s_json = readJSON_to_dict(s_path)
+            s_time = dateutil.parser.parse(s_json['updated_time'])
+            diff_min = (datetime.now() - s_time).seconds/60
+            if diff_min < timeout_mins:#only use if updated within N mins
+                self.serverList.append(s_json)
                 
-    def generateInputs(self):
+    def workloadBalance(self):
         self.updateServerList()
+        taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
+        task = random.choice(taskList)#Only balance one task per time
+        task_path = os.path.join(self.newTaskFolder, task)
+        df = readJSON_to_df(task_path)
+        df = df.sort_values('Num')
+        temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
+        index = ['-'.join(t) for t in temp]
+        df.index = index
+        df = df.fillna('')
+        for server in self.serverList:
+            if int(server['num_matlab']) == 0:
+                num_target = 1
+            else:
+                cpu_avaiable = float(server['CPU_max']) - float(server['CPU_total'])
+                cpu_per_task = float(server['CPU_matlab']) / float(server['num_matlab'])
+                num_cpu = math.floor(cpu_avaiable/cpu_per_task)
+                mem_avaiable = float(server['MEM_max']) - float(server['MEM_total'])
+                mem_per_task = float(server['MEM_matlab']) / float(server['num_matlab'])
+                num_mem = math.floor(mem_avaiable/mem_per_task)
+                num_target = min([num_cpu, num_mem])
+            df_temp = df[df['HostName']=='']
+            if len(df_temp) > 0:#still have some tasks to do
+                intialTaskIdx = list(df_temp.index)
+                random.shuffle(intialTaskIdx)
+                if len(intialTaskIdx) > num_target:
+                    intialTaskIdx = intialTaskIdx[:num_target]
+                for i in range(len(intialTaskIdx)):
+                    df.loc[intialTaskIdx[i], 'HostName'] = server['name']
+        writeJSON_from_df(task_path, df)
+    
+    def generateTasks(self):
         self.lastModifiedTime = self.getFileLastModifiedTime()
         lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, "%Y%m%d_%H%M%S")
-        oldFileName = os.path.join(self.finishedTaskFolder, '_'+lastModifiedTimeStr+'.json')
-        if os.path.isfile(oldFileName):
+        oldJsonName = os.path.join(self.finishedTaskFolder, 'TaskList_'+lastModifiedTimeStr+'.json')
+        newJsonName = os.path.join(self.newTaskFolder, 'TaskList_'+lastModifiedTimeStr+'.json')
+        if os.path.isfile(oldJsonName):# already finished
+            return
+        if os.path.isfile(newJsonName):# already created
             return
         parameterTable = pd.read_excel(self.taskFilePath, sheet_name='ParameterRange')
 #        Helper.printTable(parameterTable, 'parameterTable')
@@ -124,7 +164,7 @@ class Master:
         combinations = list(prod(*vectorList))
         combinations = [[i+1]+list(combinations[i]) for i in range(len(combinations))]
         taskTable = pd.DataFrame(data=combinations, columns=columns)
-        numTasks = len(taskTable)
+#        numTasks = len(taskTable)
 #        numTaskPerServer = math.floor(numTasks/numServerName)
 #        numLastServer = numTasks - (numServerName-1)*numTaskPerServer
         
@@ -175,33 +215,10 @@ class Master:
             writer.save()
         
         taskTable = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
-        intialTaskIdx = list(taskTable.index)
-        random.shuffle(intialTaskIdx)
-        if len(intialTaskIdx) > len(self.serverList):
-            intialTaskIdx = intialTaskIdx[:len(self.serverList)]
-        for i in range(len(intialTaskIdx)):
-            taskTable.loc[intialTaskIdx[i], 'HostName'] = self.serverList[i]['name']
-        newFileName = os.path.join(self.newTaskFolder, 'TaskList_'+lastModifiedTimeStr+'.json')
-        taskTable.to_json(newFileName)
-#        return taskTable
-#        self.lastModifiedTime = self.getFileLastModifiedTime()
-#        lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, "%Y%m%d_%H%M%S")
-#        input_columns = columns + ['UUID']
-#        for ServerName in ServerNameList:
-#            input_all = []
-#            taskIdx = []
-#            ServerName = ServerName.lower()
-#            for i in range(numTasks):
-#                finished = taskTable.loc[i, 'Finished']
-#                targetServer = taskTable.loc[i, 'ServerName'].lower()
-#                if finished != 1 and targetServer == ServerName:
-#                    input_all.append(taskTable.loc[i, input_columns].values.tolist())
-#                    taskIdx.append(i)
-#            newFileName = os.path.join(self.newTaskFolder, '_'+lastModifiedTimeStr+'_PyPickle.out')
-#            oldFileName = os.path.join(self.finishedTaskFolder, '_'+lastModifiedTimeStr+'_PyPickle.out')
-#            if len(input_all) > 0 and not os.path.isfile(oldFileName):
-#                with open(newFileName, 'wb') as f:
-#                    pickle.dump([input_all, taskIdx], f)
+        
+        newXlsxName = os.path.join(self.mainFolder, 'Output', 'TaskList_'+lastModifiedTimeStr+'.xlsx')
+        writeJSON_from_df(newJsonName, taskTable)
+        shutil.copyfile(self.taskFilePath, newXlsxName)
 
 if __name__ == '__main__':
     pass

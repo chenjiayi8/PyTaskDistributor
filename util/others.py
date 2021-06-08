@@ -39,3 +39,10 @@ def getProcessList():
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
     return pd.DataFrame(data=data, columns=columns)
+
+
+def getProcessCPU(pid):
+    try:
+        return psutil.Process(pid).cpu_percent(interval=1)
+    except:
+        return 0.0
