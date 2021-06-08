@@ -115,6 +115,15 @@ class Server:
                             targetMatIdx = matModifiedTime.index(max(matModifiedTime))
                             targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
                             targetMatPaths.append(targetMatPath)
+                        else:
+                            logFile=matFolder = os.path.join(self.matFolderPath, session, session+'.txt')
+                            with open(logFile, 'rt') as f:
+                                lines = f.read().splitlines()
+                                lines = lines[1:]
+                                msg = {}
+                                msg['Comments'] = '|'.join(lines)
+                                self.statusDict['finishedSessions'][key] = msg
+                            
             if len(targetMatPaths) > 0:
                 os.chdir(self.factoryFolder)
                 eng = matlab.engine.start_matlab()
@@ -266,6 +275,10 @@ class Server:
     def prepareFactory(self):
         sync(self.mainFolder, self.factoryFolder, 'sync', create=True, exclude=self.excludedFolder)
     
+    def getTaskList(self):
+        taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
+        return taskList
+    
     def getTaskTable(self, task):
         input_path = os.path.join(self.newTaskFolder, task)
         df = readJSON_to_df(input_path)
@@ -278,7 +291,7 @@ class Server:
         return df2
     
     def onInterval(self):
-        taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
+        taskList = self.getTaskList()
         cleanTask = self.hostName+'_clean.json'
         # clean previous task results
         if cleanTask in taskList:
