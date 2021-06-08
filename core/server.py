@@ -71,6 +71,8 @@ class Server:
             
     
     def onStartTask(self):
+        if int(self.statusDict['num_matlab']) == 0:
+            self.prepareFactory()
         sessions = self.getFinishedSessions()
         if sessions:
             self.markFinishedSession(sessions)
@@ -243,14 +245,6 @@ class Server:
         copy_tree(sourceFolder, targetFolder)#copy simulation results to task result folder
         shutil.rmtree(sourceFolder)
         return output
-    
-    def writeTasktable(self, taskFilePath, taskTable):
-        book = load_workbook(taskFilePath)
-        writer = pd.ExcelWriter(taskFilePath, engine='openpyxl')
-        writer.book = book
-        writer.sheets = {ws.title: ws for ws in book.worksheets}
-        taskTable.to_excel(writer, sheet_name='Sheet1', startrow=1, header=False,index=False)
-        writer.save()
     
     def updateTaskFolderPath(self, task):
         markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
