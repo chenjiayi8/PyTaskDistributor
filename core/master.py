@@ -70,8 +70,10 @@ class Master:
         taskTable_modifiedTime = datetime.fromtimestamp(os.path.getmtime(self.taskFilePath))
         return taskTable_modifiedTime
     
-    def getTaskList(self):
-        taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
+    def getTaskList(self, folder=None):
+        if folder == None:
+            folder = self.newTaskFolder
+        taskList = [file for file in os.listdir(folder) if file.endswith(".json")]
         return taskList
     
     def updateServerList(self, timeout_mins=30):
@@ -98,6 +100,17 @@ class Master:
         df.index = index
         df = df.fillna('')
         for server in self.serverList:
+            # check if assigned sessions are running
+            skipFlag = False
+            df_assigned = df[(df['HostName']==server['name'])&\
+                             (df['Finished']!=1) ]
+            for idx in df_assigned.index:
+                if idx not in server['currentSessions']:
+                    #assigned session is not running
+                    skipFlag = True
+                    continue
+            if skipFlag:
+                continue# Do not assign new session
             if int(server['num_matlab']) == 0:
                 num_target = 1
             else:
