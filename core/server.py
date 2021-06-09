@@ -7,31 +7,23 @@ Created on Fri Jun  4 13:21:08 2021
 """
 
 from PyTaskDistributor.util.others import (
-        sleepMins, markFinishedTasks, getProcessList,
+        sleepMins, getProcessList,
         getProcessCPU)
 from PyTaskDistributor.util.json import (
         writeJSON_from_dict, readJSON_to_df, readJSON_to_dict)
+from PyTaskDistributor.core.session import Session
+from multiprocessing import Process, Manager
 import os
 import sys
 from datetime import datetime
-from multiprocessing.dummy import Pool as ThreadPool
-import time
 import numpy as np
-import pandas as pd
 import shutil
-import pickle
 import matlab.engine
-from openpyxl import load_workbook
 from dirsync import sync
-from distutils.dir_util import copy_tree
 import random
 import traceback
-import subprocess
 from collections import OrderedDict
-import json  
 import psutil
-from json import JSONDecoder
-customdecoder = JSONDecoder(object_pairs_hook=OrderedDict)
 
 class Server:
     def __init__(self, setup):
@@ -50,6 +42,9 @@ class Server:
         self.deliveryFolder = self.setup['delivery']
         self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
         self.excludedFolder=['Output', 'NewTasks', 'FinishedTasks', '.git']
+        self.manager = Manager()
+        self.currentSessions = self.manager.dict()
+        self.processes = {}
         self.initialise()
 
     
@@ -63,12 +58,11 @@ class Server:
             statusDict['CPU_max'] = self.CPU_percent_max
             statusDict['MEM_max'] = self.MEM_percent_max
             statusDict['msg'] = ''
-            statusDict['currentSessions'] = OrderedDict()
+            statusDict['currentSessions'] = []
             statusDict['finishedSessions'] = OrderedDict()
             self.statusDict = statusDict
         self.updateServerStatus()
         self.writeServerStatus()
-            
     
     def onStartTask(self):
         if int(self.statusDict['num_matlab']) == 0:
@@ -121,6 +115,7 @@ class Server:
                                 lines = f.read().splitlines()
                                 lines = lines[1:]
                                 msg = {}
+                                msg['Finished'] = 1
                                 msg['Comments'] = '|'.join(lines)
                                 self.statusDict['finishedSessions'][key] = msg
                             
@@ -155,30 +150,11 @@ class Server:
         else:
             return None
     
-    def getRunningSessions(self):
+    def getUnfinishedSessions(self):
         outputFolder = os.path.join(self.factoryFolder, 'Output')
-        runningSessions = os.listdir(outputFolder)
-        runningSessions = [session for session in runningSessions if session.startswith('Task-')]
-        return runningSessions, outputFolder
-    
-    def getUnfinishedMatPaths(self, df):
-        runningSessions, outputFolder = self.getRunningSessions()
-        unfinishedMatPaths = []
-        unwantedInputs = []
-        for session in runningSessions:
-            if session not in self.statusDict['currentSessions']:
-                matFolder = os.path.join(outputFolder, session, 'data')
-                matList = os.listdir(matFolder)
-                if len(matList) > 0:
-                    matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
-                    targetMatIdx = matModifiedTime.index(max(matModifiedTime))
-                    targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
-                    unfinishedMatPaths.append(targetMatPath)
-                    if session in df.index:
-                        unwantedInputs.append(session)
-        df2 = df.drop(unwantedInputs)
-        return df2, unfinishedMatPaths
-    
+        unfinishedSessions = os.listdir(outputFolder)
+        unfinishedSessions = [session for session in unfinishedSessions if session.startswith('Task-')]
+        return unfinishedSessions, outputFolder    
     
     def removeFinishedInputs(self, df):
         if len(df) == 0:
@@ -191,69 +167,52 @@ class Server:
         df2 = df.drop(unwantedInputs)
         return df2
     
-    def createInputs(self, df):
-        runningSessions, outputFolder = self.getRunningSessions()
-        inputs = []
-        unfinishedMatPaths = []
-        unwantedInputs = []
+    def createSessions(self, df):
+        unfinishedSessions, outputFolder = self.getUnfinishedSessions()
+        input_columns = ('Num, totalTime, tauMin, tauMax, wcRatio, maxSD, '
+                         'kd1, kd2, kd3, kd4, kd5, A2, A3, A4, kg1, kg2, kg3, '
+                         'kg4, initialSaturation, UUID')
+        input_columns = input_columns.split(', ')
+        sessions = {}
         for i in range(len(df)):
-            session = df.index(i)
-        for session in runningSessions:
-            if session not in self.statusDict['currentSessions']:
-                matFolder = os.path.join(outputFolder, session, 'data')
-                matList = os.listdir(matFolder)
-                if len(matList) > 0:
-                    matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
-                    targetMatIdx = matModifiedTime.index(max(matModifiedTime))
-                    targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
-                    unfinishedMatPaths.append(targetMatPath)
-                    if session in df.index:
-                        unwantedInputs.append(session)
-        df2 = df.drop(unwantedInputs)
-        return df2, unfinishedMatPaths
+            session = df.index[i]
+            if session in unfinishedSessions:
+                if session not in self.statusDict['currentSessions']:
+                    matFolder = os.path.join(outputFolder, session, 'data')
+                    matList = os.listdir(matFolder)
+                    if len(matList) > 0:
+                        matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
+                        targetMatIdx = matModifiedTime.index(max(matModifiedTime))
+                        targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
+                        sessions[session] = Session(self, session, targetMatPath)
+                        continue;
+            input = list(df.loc[session, input_columns])
+            sessions[session] = Session(self, session, input)
+        return sessions
     
-    def buildUnfinishedInputs(self, input_all):
-        outputFolder = os.path.join(self.factoryFolder, 'Output')
-        unfinishedTasks = os.listdir(outputFolder)
-        for i in range(len(input_all)):
-            inputs = input_all[i]
-            taskname = 'Task-'+str(inputs[0])+'-'+ inputs[-1]
-            if taskname in unfinishedTasks:
-                matFolder = os.path.join(outputFolder, taskname, 'data')
-                matList = os.listdir(matFolder)
-                if len(matList) > 0:
-                    matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
-                    targetMatIdx = matModifiedTime.index(max(matModifiedTime))
-                    targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
-                    input_all[i] = [targetMatPath, taskname]
-        return input_all
+    def checkProcesses(self):
+        for k, v in self.processes.items():
+            if not v.is_alive():
+                print("Process for {} is killed".format(k))
     
-    def runMatlabUnfinishedTasks(self, inputs):
-        time.sleep(random.randint(1, 60))
-        eng    = matlab.engine.start_matlab()
-        output, outputFolderName = eng.MatlabToPyRunUnfinishedTasks(inputs, nargout=2)
-        return output, outputFolderName
-    
-    
-    def runMatlabNewTasks(self, inputs):
-        uuid = inputs[-1]
-        inputs = [float(i) for i in inputs[:-1]] 
-        inputs.append(uuid)
-        eng    = matlab.engine.start_matlab()
-        output, outputFolderName = eng.MatlabToPyRunNewTasks(inputs, nargout=2)
-        return output, outputFolderName
-    
-    def runMatlabTasks(self, inputs):
-        input_type = type(inputs[0])
-        if input_type is str:
-            output, outputFolderName = self.runMatlabUnfinishedTasks(inputs)
-        else:
-            output, outputFolderName = self.runMatlabNewTasks(inputs)
-        sourceFolder = os.path.join(self.factoryFolder, 'Output', outputFolderName)
-        targetFolder = os.path.join(self.matFolderPath, outputFolderName)
-        copy_tree(sourceFolder, targetFolder)#copy simulation results to task result folder
-        shutil.rmtree(sourceFolder)
-        return output
+    def runSessions(self, sessions):
+        for k, v in sessions.items():
+            p = Process(target=v.main)
+            p.start()
+            self.processes[k] = p
+
+    def updateSessionsStatus(self):
+        for k, v in self.currentSessions.items():
+            if k not in self.statusDict['currentSessions']:# add session
+                self.statusDict['currentSessions'].append(k)
+            if v != 1: # remove session
+                self.statusDict['finishedSessions'][k] = v
+                self.statusDict['currentSessions'].remove(k)
+                del self.currentSessions[k]
+                del self.processes[k]
+#        print('currentSessions0', self.currentSessions)
+#        print('currentSessions1', self.statusDict['currentSessions'])
+#        print('finishedSessions', self.statusDict['finishedSessions'])
     
     def updateTaskFolderPath(self, task):
         markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
@@ -306,79 +265,14 @@ class Server:
             self.onStartTask()
             df = self.getTaskTable(task)# check new task
             df = self.removeFinishedInputs(df)
-#            inputs = self.createInputs(df)
-#            inputs = self.createInputs(df)
-#            inputs += unfinishedMatPaths
-            
-            # create process to run individual task on background
-            # import multiprocessing as mp
-            # Process: p1 = mp.Process(target=keepIndexUpdated) p1.start()
-            
-#            if len(df) == 0: #no
-#                break
-#            output_path = os.path.join(self.finishedTaskFolder, task)
-
-            # sync folder to make sure new implementation is avaiable
-#            self.prepareFactory()
-            # create task folder in factory folder
-            
-#            self.taskFolderPath = taskFolderPath
-#            if os.path.exists(taskFolderPath):
-#                shutil.rmtree(taskFolderPath)
-            if not os.path.exists(self.taskFolderPath):
-                os.makedirs(self.taskFolderPath)
-                
-
-            '''
-            TODO: 
-                1. build inputs for nwe task
-                2. build inputs for unfinished task
-                3. update finishedSession after finishing a task
-            '''
+            sessions = self.createSessions(df)
+            self.runSessions(sessions)
+            self.updateSessionsStatus()
         
-        time.sleep(1)
-#        sleepMins(3)# wait for the starting of simulation
+#        time.sleep(10)
+        sleepMins(3)# wait for the starting of simulation
         self.updateServerStatus()
         self.writeServerStatus()
-            # copy task file to task folder
-#            copiedTaskFile = os.path.join(self.taskFolderPath, 'TaskList.xlsx')
-#            if not os.path.isfile(copiedTaskFile)
-#                shutil.copyfile(self.taskFilePath, copiedTaskFile)
-            
-            # cd to factory folder to start the simulation
-#            os.chdir(self.factoryFolder)
-#            # load inputs and run simulation
-#            df = pd.read_json(input_path)
-#            with open(input_path, 'rb') as f:
-#                [input_all, taskIdx] = pickle.load(f)
-#                # remove finished inputs
-#                input_all, taskIdx = self.removeFinishedInputs(input_all, taskIdx)
-#                # buil unfinished tasks
-#                input_all = self.buildUnfinishedInputs(input_all)
-##                results_old = self.pool.map(self.runMatlabUnfinishedTasks, unfinishedMats)
-#                # run rest inputs
-#                results = self.pool.map(self.runMatlabTasks, input_all)
-##                print(input_all)
-##                results = []
-##                for inputs in input_all:
-##                    result = self.callMatlab(inputs)
-##                    results.append(result)
-#                taskTable = pd.read_excel(copiedTaskFile, sheet_name = 'Sheet1')  
-#                taskTable = markFinishedTasks(taskTable, results, taskIdx)
-#                self.writeTasktable(copiedTaskFile, taskTable)
-#                shutil.move(input_path, output_path)#remove new task to finished
-#                
-#
-#            if not os.path.isfile(self.summaryFilePath):
-#                print(copiedTaskFile)
-#                print(self.summaryFilePath)
-#                shutil.copyfile(copiedTaskFile, self.summaryFilePath)
-#                sourceFolder = os.path.join(self.factoryFolder, 'Output')
-#                copy_tree(sourceFolder, self.taskFolderPath)
-#                self.cleanFolder(sourceFolder)
-            # cd back to default folder for next simulation
-
-#            os.chdir(self.defaultFolder)
     
     def main(self):
         numMin = random.randint(3,10)

@@ -22,13 +22,14 @@ setup = config[hostname]
 #setup['delivery'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 #setup['factory'] = '/home/frank/LocalWorkFolder/TranReNu/MC3DVersion3.3_Git/'        
 obj = Master(setup)
-obj.generateTasks()
-obj.updateServerList()
-obj.updateTaskStatus()
-
-cmd_tempate = "nohup matlab-R2016B -r 'D3Q7Initiator({});exit;' > {}"
-inputs = ['1.0,86400.0,40.0,40.0,0.4,1000000.0,9.0,5.0,8.0,40.0,40.0,40.0,40.0,0.0',
-          'Task-1.txt']
+#obj.main()
+#obj.generateTasks()
+#obj.updateServerList()
+#obj.updateTaskStatus()
+#
+#cmd_tempate = "nohup matlab-R2016B -r 'D3Q7Initiator({});exit;' > {}"
+#inputs = ['1.0,86400.0,40.0,40.0,0.4,1000000.0,9.0,5.0,8.0,40.0,40.0,40.0,40.0,0.0',
+#          'Task-1.txt']
 
 
 

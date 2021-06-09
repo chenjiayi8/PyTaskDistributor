@@ -16,15 +16,11 @@ import dateutil
 import pandas as pd
 import numpy as np
 from itertools import product as prod
-#from Helper import Helper
-from openpyxl import load_workbook
-#import pickle
 import math
 import random
 import uuid
 import traceback
 import time
-#import json
 import shutil
 
 def getUUID(origin):
@@ -39,7 +35,6 @@ class Master:
         self.defaultFolder = os.getcwd()
         self.serverFolder = os.path.join(self.defaultFolder, 'Servers')
         self.mainFolder = self.setup['order']
-
         self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
         self.finishedTaskFolder = os.path.join(self.mainFolder, 'FinishedTasks')
         self.taskFilePath = os.path.join(self.mainFolder, 'TaskList.xlsx')
@@ -51,7 +46,6 @@ class Master:
         try:
             if self.lastModifiedTime != self.getFileLastModifiedTime():
                 self.generateTasks()
-                
             self.updateServerList()
             self.updateTaskStatus()
             self.workloadBalance()
@@ -62,7 +56,6 @@ class Master:
 #            print(msg)
             print("\r", msg, end='')
             time.sleep(numMin*60)
-#            Helper.sleep(numMin)
             needAssistance = False
         except (KeyboardInterrupt, SystemExit):
             raise
@@ -76,13 +69,6 @@ class Master:
     def getFileLastModifiedTime(self):
         taskTable_modifiedTime = datetime.fromtimestamp(os.path.getmtime(self.taskFilePath))
         return taskTable_modifiedTime
-    
-    def emptySheetExcludeHeaders(self, ws):
-#        for row in ws.columns:
-        for i, row in enumerate(ws.iter_rows()):     
-            if i != 0:                      
-                for cell in row:
-                    cell.value = None
     
     def getTaskList(self):
         taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
@@ -101,6 +87,8 @@ class Master:
                 
     def workloadBalance(self):
         taskList = self.getTaskList()
+        if len(taskList) == 0:
+            return
         task = random.choice(taskList)#Only balance one task per time
         task_path = os.path.join(self.newTaskFolder, task)
         df = readJSON_to_df(task_path)
@@ -165,7 +153,9 @@ class Master:
             if modified_flag:
                 writeJSON_from_df(path, df)
                 updateXlsxFile(path_xlsx, df)
-        
+            if all(df['Finished'] == 1):# move to finish folder 
+                path_done = os.path.join(self.finishedTaskFolder, task)
+                shutil.move(path, path_done)
     
     def generateTasks(self):
         self.lastModifiedTime = self.getFileLastModifiedTime()
@@ -217,18 +207,9 @@ class Master:
         
         taskTable['UUID'] = ''
         taskTable.loc[:, 'UUID'] = taskTable.loc[:, 'UUID'].apply(getUUID)
-#        book = load_workbook(self.taskFilePath)
-#        writer = pd.ExcelWriter(self.taskFilePath, engine='openpyxl')
-#        writer.book = book
-#        writer.sheets = {ws.title: ws for ws in book.worksheets}
-        
         if not areSameTasks:
             taskTable_new = pd.DataFrame(columns=columns_old)
             taskTable_new = pd.concat([taskTable, taskTable_new], axis=1)
-            
-#            self.emptySheetExcludeHeaders(writer.book['Sheet1'])
-#            taskTable_new.to_excel(writer, sheet_name='Sheet1', startrow=1, header=False,index=False)
-#            writer.save()
             updateXlsxFile(self.taskFilePath, taskTable_new)
         
         taskTable = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')

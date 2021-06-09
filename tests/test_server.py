@@ -7,6 +7,7 @@ Created on Fri Jun  4 13:21:05 2021
 """
 
 import os
+import time
 from PyTaskDistributor.util.config import readConfig, getHostName
 from PyTaskDistributor.core.server import Server
 
@@ -22,11 +23,25 @@ setup = config[hostname]
 #setup['delivery'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 #setup['factory'] = '/home/frank/LocalWorkFolder/TranReNu/MC3DVersion3.3_Git/'        
 obj = Server(setup)
-obj.main()
-#taskList = [file for file in os.listdir(obj.newTaskFolder) if file.endswith(".json")]
+#obj.main()
+#taskList = obj.getTaskList()
 #task = taskList[0]
 #obj.updateTaskFolderPath(task)
 #finishedSessions = obj.getFinishedSessions()
+#df = obj.getTaskTable(task)# check new task
+#df = obj.removeFinishedInputs(df)
+#unfinishedSessions, outputFolder = obj.getUnfinishedSessions()
+##session = unfinishedSessions[0]
+#sessions = obj.createSessions(df)
+#obj.runSessions(sessions)
+#count = 1
+#while True:
+#    time.sleep(1)
+#    print('-'*30+str(count)+'-'*30)
+#    count += 1
+#    obj.updateSessionsStatus()
+#    obj.checkProcesses()
+#k, v  = list(sessions.items())[0]
 #session = finishedSessions[0]
 #matFolder = os.path.join(obj.matFolderPath, session, 'data')
 #matList = os.listdir(matFolder)
