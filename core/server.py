@@ -41,6 +41,7 @@ class Server:
         self.factoryFolder = self.setup['factory']
         self.deliveryFolder = self.setup['delivery']
         self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
+        self.finishedTaskFolder = os.path.join(self.mainFolder, 'FinishedTasks')
         self.excludedFolder=['Output', 'NewTasks', 'FinishedTasks', '.git']
         self.manager = Manager()
         self.currentSessions = self.manager.dict()
@@ -210,14 +211,29 @@ class Server:
                 self.statusDict['currentSessions'].remove(k)
                 del self.currentSessions[k]
                 del self.processes[k]
+        self.removeFinishedSessionsStatus()
 #        print('currentSessions0', self.currentSessions)
 #        print('currentSessions1', self.statusDict['currentSessions'])
 #        print('finishedSessions', self.statusDict['finishedSessions'])
     
-    def updateTaskFolderPath(self, task):
+    def removeFinishedSessionsStatus(self):
+        taskList = self.getTaskList(folder=self.finishedTaskFolder)
+        sessions = list(self.statusDict['finishedSessions'].keys())
+        for task in taskList:
+            timeStr = self.getTimeStr(task)
+            for session in sessions:
+                if timeStr in session:
+#                    print("Removing finished session {}".format(session))
+                    del self.statusDict['finishedSessions'][session]
+    
+    def getTimeStr(self, task):
         markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
         dotLocation = [i for i, ltr in enumerate(task) if ltr == '.']
         timeStr = task[markLocation[0]+1:dotLocation[-1]]
+        return timeStr
+    
+    def updateTaskFolderPath(self, task):
+        timeStr = self.getTimeStr(task)
         self.taskFolderPath = os.path.join(self.deliveryFolder, 'Output', timeStr)
         self.matFolderPath = os.path.join(self.factoryFolder, 'Output', timeStr)
         self.taskTimeStr = timeStr
@@ -234,8 +250,10 @@ class Server:
     def prepareFactory(self):
         sync(self.mainFolder, self.factoryFolder, 'sync', create=True, exclude=self.excludedFolder)
     
-    def getTaskList(self):
-        taskList = [file for file in os.listdir(self.newTaskFolder) if file.endswith(".json")]
+    def getTaskList(self, folder=None):
+        if folder == None:
+            folder = self.newTaskFolder
+        taskList = [file for file in os.listdir(folder) if file.endswith(".json")]
         return taskList
     
     def getTaskTable(self, task):
@@ -267,10 +285,10 @@ class Server:
             df = self.removeFinishedInputs(df)
             sessions = self.createSessions(df)
             self.runSessions(sessions)
-            self.updateSessionsStatus()
         
 #        time.sleep(10)
         sleepMins(3)# wait for the starting of simulation
+        self.updateSessionsStatus()
         self.updateServerStatus()
         self.writeServerStatus()
     
