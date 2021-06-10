@@ -79,7 +79,8 @@ class Server:
     def updateServerStatus(self):
         df = getProcessList()
         df_user = df[df['User']==self.userName]
-        df_matlab = df_user[df_user['Command'].apply(lambda x: 'matlab' in x.lower())]
+        #only count matlab process opened by Python
+        df_matlab = df_user[df_user['Command'].apply(lambda x: 'matlab -mvminputpipe' in x.lower())]
         self.statusDict['CPU_total'] = str(round(psutil.cpu_percent(interval=1), 2))
         self.statusDict['MEM_total'] = str(round(sum(df['Mem']), 2))
         if len(df_matlab) > 0:

@@ -51,8 +51,9 @@ def getProcessList():
             # Get process name & pid from process object.
 #            cpu_percent = proc.cpu_percent(interval=0.01)
 #            print(cpu_percent)
+            cmdline = ' '.join(proc.cmdline())
             data.append([proc.pid, proc.username(), proc.name(),
-                     0, proc.memory_percent(), proc.exe()])
+                     0, proc.memory_percent(), cmdline])
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
     return pd.DataFrame(data=data, columns=columns)
