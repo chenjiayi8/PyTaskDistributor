@@ -233,11 +233,27 @@ class Server:
         timeStr = task[markLocation[0]+1:dotLocation[-1]]
         return timeStr
     
-    def updateTaskFolderPath(self, task):
+    def updateFolderPaths(self, task):
         timeStr = self.getTimeStr(task)
-        self.taskFolderPath = os.path.join(self.deliveryFolder, 'Output', timeStr)
+        self.deliveryFolderPath = os.path.join(self.deliveryFolder, 'Output', timeStr)
         self.matFolderPath = os.path.join(self.factoryFolder, 'Output', timeStr)
         self.taskTimeStr = timeStr
+        self.makedirs(self.deliveryFolderPath)
+        self.makedirs(self.matFolderPath)
+    
+    def makedirs(self, folder):
+        if not os.path.isdir(folder):
+            os.makedirs(folder)
+    
+    def cleanUnfinishedSessions(self):
+        self.prepareFactory()
+        unfinishedSessions, outputFolder = self.getUnfinishedSessions()
+        for session in unfinishedSessions:
+            folder_path = os.path.join(outputFolder, session)
+            self.cleanFolder(folder_path)
+            shutil.rmtree(folder_path)
+        self.currentSessions.clear()
+        self.statusDict['currentSessions'].clear()
     
     def cleanFolder(self, folerName):
         if os.path.isdir(folerName):
@@ -273,14 +289,13 @@ class Server:
         cleanTask = self.hostName+'_clean.json'
         # clean previous task results
         if cleanTask in taskList:
-            for folder in self.excludedFolder:
-                self.cleanFolder(os.path.join(self.factoryFolder, folder))
+            self.cleanUnfinishedSessions()
             taskList.remove(cleanTask)
             os.unlink(os.path.join(self.newTaskFolder, cleanTask))
         for task in taskList:
             # announce the start of simulation
             print("Working on {}".format(task))
-            self.updateTaskFolderPath(task)#paths for output
+            self.updateFolderPaths(task)#paths for output
             self.onStartTask()
             df = self.getTaskTable(task)# check new task
             df = self.removeFinishedInputs(df)
@@ -288,13 +303,13 @@ class Server:
             self.runSessions(sessions)
         
 #        time.sleep(10)
-        sleepMins(3)# wait for the starting of simulation
+        sleepMins(1)# wait for the starting of simulation
         self.updateSessionsStatus()
         self.updateServerStatus()
         self.writeServerStatus()
     
     def main(self):
-        numMin = random.randint(3,10)
+        numMin = random.randint(3,5)
         try:
             self.onInterval()
             nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")

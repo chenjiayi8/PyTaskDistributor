@@ -21,6 +21,15 @@ def emptySheetExcludeHeaders(ws):
             for cell in row:
                 cell.value = None
     
+def getFileSuffix(path):
+    basename = os.path.basename(path)
+    dot_location = [i for i in range(len(basename)) if basename[i] == '.']
+    if len(dot_location) > 0:
+        suffix = basename[dot_location[-1]:]
+    else:
+        suffix = ''
+    return suffix
+    
 def updateXlsxFile(path_xlsx, df, sheet_name='Sheet1'):
     if not os.path.isfile(path_xlsx):
         df.to_excel(path_xlsx, index=False)

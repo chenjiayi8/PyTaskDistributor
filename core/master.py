@@ -8,7 +8,7 @@ Created on Sat Jul 18 10:05:04 2020
 
 from PyTaskDistributor.util.json import (
         readJSON_to_df, writeJSON_from_df, readJSON_to_dict)
-from PyTaskDistributor.util.others import updateXlsxFile
+from PyTaskDistributor.util.others import updateXlsxFile, sleepMins
 import os
 import sys
 from datetime import datetime
@@ -42,7 +42,7 @@ class Master:
         pass
     
     def main(self):
-        numMin = random.randint(1,5)
+        numMin = random.randint(3,5)
         try:
             if self.lastModifiedTime != self.getFileLastModifiedTime():
                 self.generateTasks()
@@ -55,7 +55,7 @@ class Master:
             msg = "{}: Last task is assigned at {}, sleeping for {} mins".format(nowTimeStr, lastModifiedTimeStr, numMin)
 #            print(msg)
             print("\r", msg, end='')
-            time.sleep(numMin*60)
+            sleepMins(numMin)
             needAssistance = False
         except (KeyboardInterrupt, SystemExit):
             raise
@@ -121,6 +121,8 @@ class Master:
                 mem_per_task = float(server['MEM_matlab']) / float(server['num_matlab'])
                 num_mem = math.floor(mem_avaiable/mem_per_task)
                 num_target = min([num_cpu, num_mem])
+                if num_target > 2: #Max add 2 per cyce 
+                    num_target = 2
             df_temp = df[df['HostName']=='']
             if len(df_temp) > 0:#still have some tasks to do
                 intialTaskIdx = list(df_temp.index)
@@ -179,6 +181,7 @@ class Master:
             return
         if os.path.isfile(newJsonName):# already created
             return
+        modifiedTime = os.path.getmtime(self.taskFilePath)
         parameterTable = pd.read_excel(self.taskFilePath, sheet_name='ParameterRange')
         parameterIdxs = list(range(0,5))+list(range(7,15+5))
         parameterNames = list(parameterTable.columns)
@@ -203,32 +206,20 @@ class Master:
         taskTable = pd.DataFrame(data=combinations, columns=columns)
         taskTable_old = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
         columns_old = list(taskTable_old.columns)
-        areSameTasks = True
-        for name in columns:
-            if name != 'Num':
-                vector_old = taskTable_old.loc[:, name]
-                vector_old = sorted(set(vector_old))
-                vector_new = parameterTable.loc[:, name]
-                vector_new = sorted(vector_new)
-                nonNanIdx = np.isnan(vector_new)
-                nonNanIdx = [not(i) for i in nonNanIdx]
-                vector_new = [vector_new[i] for i in range(len(vector_new)) if nonNanIdx[i]]
-                if vector_new != vector_old:
-                    areSameTasks = False
-                    print(vector_new)
-                    print(vector_old)
-        
-        taskTable['UUID'] = ''
+        for c in columns_old:
+            if c not in taskTable.columns:
+                taskTable[c] = ''
         taskTable.loc[:, 'UUID'] = taskTable.loc[:, 'UUID'].apply(getUUID)
-        if not areSameTasks:
-            taskTable_new = pd.DataFrame(columns=columns_old)
-            taskTable_new = pd.concat([taskTable, taskTable_new], axis=1)
-            updateXlsxFile(self.taskFilePath, taskTable_new)
-        
+        updateXlsxFile(self.taskFilePath, taskTable)
         taskTable = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
         newXlsxName = os.path.join(self.mainFolder, 'Output', 'TaskList_'+lastModifiedTimeStr+'.xlsx')
         writeJSON_from_df(newJsonName, taskTable)
         shutil.copyfile(self.taskFilePath, newXlsxName)
+        os.utime(self.taskFilePath, (modifiedTime, modifiedTime))
+        os.utime(newJsonName, (modifiedTime, modifiedTime))
+        os.utime(newXlsxName, (modifiedTime, modifiedTime))
+
 
 if __name__ == '__main__':
     pass
+    

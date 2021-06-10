@@ -14,6 +14,8 @@ import shutil
 import matlab.engine
 from distutils.dir_util import copy_tree
 import random
+from glob import glob
+from PyTaskDistributor.util.others import getFileSuffix
 
 class Session:
     def __init__(self, server, name, input):
@@ -23,9 +25,10 @@ class Session:
         self.defaultFolder = server.defaultFolder
         self.mainFolder = server.mainFolder
         self.factoryFolder = server.factoryFolder
-        self.deliveryFolder = server.deliveryFolder
+        self.deliveryFolderPath = server.deliveryFolderPath
         self.matFolderPath = server.matFolderPath
-        self.logFile = os.path.join(self.matFolderPath, name, name+'.txt')
+        self.taskFolderPath = server.taskFolderPath
+        self.logFile = os.path.join(self.factoryFolder, 'Output', name, name+'.txt')
 
     def runMatlabUnfinishedTasks(self, input):
         time.sleep(random.randint(30, 60))
@@ -47,6 +50,26 @@ class Session:
         output, outputFolderName = eng.MatlabToPyRunNewTasks(inputs, nargout=2)
         return output, outputFolderName
     
+    def makedirs(self, folder):
+        if not os.path.isdir(folder):
+            os.makedirs(folder)
+    
+    def deliveryTask(self, targetFolder):
+        targetFolder = os.path.normpath(targetFolder)
+        basename = os.path.basename(targetFolder)
+        targetFolder += os.path.sep
+        itemList = glob(os.path.join(targetFolder,  '**'), recursive=True)
+        last_parts = [item.replace(targetFolder, '') for item in itemList]
+        for i in range(len(itemList)):
+            item = itemList[i]
+            path_new = os.path.join(self.deliveryFolderPath, basename, last_parts[i])
+            if os.path.isdir(item):
+                self.makedirs(path_new)
+            if os.path.isfile(item):
+                if getFileSuffix(item).lower() != '.mat':
+                    shutil.copyfile(item, path_new)
+    
+    
     def runMatlabTasks(self, input):
         os.chdir(self.factoryFolder)
         input_type = type(input)
@@ -57,8 +80,9 @@ class Session:
         sourceFolder = os.path.join(self.factoryFolder, 'Output', outputFolderName)
         targetFolder = os.path.join(self.matFolderPath, outputFolderName)
         copy_tree(sourceFolder, targetFolder)#copy simulation results to task result folder
+        self.deliveryTask(targetFolder)# delivery everything excluding mat file
         shutil.rmtree(sourceFolder)
-        os.chdir(self.defaultFolder)
+        os.chdir(self.deglobfaultFolder)
         return output
   
     def main(self):
