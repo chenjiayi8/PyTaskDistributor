@@ -37,7 +37,8 @@ class Master:
         self.serverFolder = os.path.join(self.defaultFolder, 'Servers')
         self.mainFolder = self.setup['order']
         self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
-        self.finishedTaskFolder = os.path.join(self.mainFolder, 'FinishedTasks')
+        self.finishedTaskFolder = os.path.join(self.mainFolder,
+                                               'FinishedTasks')
         self.taskFilePath = os.path.join(self.mainFolder, 'TaskList.xlsx')
         self.lastModifiedTime = ''
         self.monitor = Monitor(self)
@@ -52,12 +53,6 @@ class Master:
             self.updateServerList()
             self.updateTaskStatus()
             self.workloadBalance()
-#            lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, 
-#                                                      "%H:%M:%S %d/%m/%Y")
-#            nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")
-#            msg = "{}: Last task is assigned at {}, sleeping for {} mins".format(nowTimeStr, lastModifiedTimeStr, numMin)
-#            print(msg)
-#            print("\r", msg, end='')
             self.monitor.updateProgress(numMin)
             self.printMsgs()
             sleepMins(numMin)
@@ -65,7 +60,8 @@ class Master:
         except (KeyboardInterrupt, SystemExit):
             raise
         except:
-            print ("Need assisstance for unexpected error:\n {}".format(sys.exc_info()))
+            print ("Need assisstance for unexpected error:\n {}"\
+                   .format(sys.exc_info()))
             traceBackObj = sys.exc_info()[2]
             traceback.print_tb(traceBackObj)
             needAssistance = True
@@ -77,17 +73,19 @@ class Master:
         self.msgs.clear()
     
     def getFileLastModifiedTime(self):
-        taskTable_modifiedTime = datetime.fromtimestamp(os.path.getmtime(self.taskFilePath))
+        taskTable_modifiedTime = datetime.fromtimestamp(\
+                            os.path.getmtime(self.taskFilePath))
         return taskTable_modifiedTime
     
     def getTaskList(self, folder=None):
         if folder == None:
             folder = self.newTaskFolder
-        taskList = [file for file in os.listdir(folder) if file.endswith(".json")]
+        taskList = [f for f in os.listdir(folder) if f.endswith(".json")]
         return taskList
     
     def updateServerList(self, timeout_mins=30):
-        serverList = [file for file in os.listdir(self.serverFolder) if file.endswith(".json")]
+        serverList = [f for f in os.listdir(self.serverFolder)\
+                      if f.endswith(".json")]
         self.serverList = []
         for s in serverList:
             s_path = os.path.join(self.serverFolder, s)
@@ -125,11 +123,11 @@ class Master:
             if int(server['num_matlab']) == 0:
                 num_target = 1
             else:
-                cpu_avaiable = float(server['CPU_max']) - float(server['CPU_total'])
-                cpu_per_task = float(server['CPU_matlab']) / float(server['num_matlab'])
+                cpu_avaiable = server['CPU_max'] - server['CPU_total']
+                cpu_per_task = server['CPU_matlab'] / server['num_matlab']
                 num_cpu = math.floor(cpu_avaiable/cpu_per_task)
-                mem_avaiable = float(server['MEM_max']) - float(server['MEM_total'])
-                mem_per_task = float(server['MEM_matlab']) / float(server['num_matlab'])
+                mem_avaiable = server['MEM_max'] - server['MEM_total']
+                mem_per_task = server['MEM_matlab'] / server['num_matlab']
                 num_mem = math.floor(mem_avaiable/mem_per_task)
                 num_target = min([num_cpu, num_mem])
                 if num_target > 2: #Max add 2 per cyce 
@@ -146,7 +144,8 @@ class Master:
                     num_target = len(intialTaskIdx)
                 for i in range(len(intialTaskIdx)):
                     df.loc[intialTaskIdx[i], 'HostName'] = server['name']
-            msg = "Assign {} new sessions for Server {}".format(num_target, server['name'])
+            msg = "Assign {} new sessions for Server {}"\
+                        .format(num_target, server['name'])
             self.msgs.append(msg)
         writeJSON_from_df(task_path, df)
     
@@ -164,10 +163,12 @@ class Master:
         finishedSessions = self.getFinishedSessions()
         for task in taskList:
             path = os.path.join(self.newTaskFolder, task)
-            path_xlsx = os.path.join(self.mainFolder, 'Output', task[:-5]+'.xlsx')
+            path_xlsx = os.path.join(self.mainFolder,\
+                                     'Output', task[:-5]+'.xlsx')
             df = readJSON_to_df(path)
             df = df.sort_values('Num')
-            temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
+            temp = list(zip(['Task']*len(df),\
+                    df['Num'].apply(str) , df['UUID']))
             index = ['-'.join(t) for t in temp]
             df.index = index
             df = df.fillna('')
@@ -177,7 +178,8 @@ class Master:
                 taskTimeStr = key[:underlineLocs[1]]
                 index = key[underlineLocs[1]+1:]
                 if taskTimeStr in task and index in df.index:
-                    if df.loc[index, 'Finished'] != 1:#only modify when necessary
+                    #only modify when necessary
+                    if df.loc[index, 'Finished'] != 1:
                         values = finishedSessions[key]
                         modified_flag = True
                         for k, v in values.items():
@@ -191,15 +193,19 @@ class Master:
     
     def generateTasks(self):
         self.lastModifiedTime = self.getFileLastModifiedTime()
-        lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, "%Y%m%d_%H%M%S")
-        oldJsonName = os.path.join(self.finishedTaskFolder, 'TaskList_'+lastModifiedTimeStr+'.json')
-        newJsonName = os.path.join(self.newTaskFolder, 'TaskList_'+lastModifiedTimeStr+'.json')
+        lastModifiedTimeStr = datetime.strftime(\
+                                self.lastModifiedTime, "%Y%m%d_%H%M%S")
+        oldJsonName = os.path.join(self.finishedTaskFolder,
+                               'TaskList_'+lastModifiedTimeStr+'.json')
+        newJsonName = os.path.join(self.newTaskFolder,
+                               'TaskList_'+lastModifiedTimeStr+'.json')
         if os.path.isfile(oldJsonName):# already finished
             return
         if os.path.isfile(newJsonName):# already created
             return
         modifiedTime = os.path.getmtime(self.taskFilePath)
-        parameterTable = pd.read_excel(self.taskFilePath, sheet_name='ParameterRange')
+        parameterTable = pd.read_excel(self.taskFilePath,
+                                       sheet_name='ParameterRange')
         parameterIdxs = list(range(0,5))+list(range(7,15+5))
         parameterNames = list(parameterTable.columns)
         parameterNames_Target = [parameterNames[i] for i in parameterIdxs]
@@ -215,13 +221,15 @@ class Master:
             vector = parameterTable.loc[:, name]
             nonNanIdx = np.isnan(vector)
             nonNanIdx = [not(i) for i in nonNanIdx]
-            vector = [float(vector[i]) for i in range(len(vector)) if nonNanIdx[i]]
+            vector = [float(vector[i]) for i in range(len(vector))
+                            if nonNanIdx[i]]
             vectorList.append(vector)
         
         combinations = list(prod(*vectorList))
-        combinations = [[i+1]+list(combinations[i]) for i in range(len(combinations))]
+        combinations = [[i+1]+list(combinations[i]) 
+                            for i in range(len(combinations))]
         taskTable = pd.DataFrame(data=combinations, columns=columns)
-        taskTable_old = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
+        taskTable_old = pd.read_excel(self.taskFilePath, sheet_name='Sheet1')
         columns_old = list(taskTable_old.columns)
         for c in columns_old:
             if c not in taskTable.columns:
@@ -229,7 +237,8 @@ class Master:
         taskTable.loc[:, 'UUID'] = taskTable.loc[:, 'UUID'].apply(getUUID)
         updateXlsxFile(self.taskFilePath, taskTable)
         taskTable = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
-        newXlsxName = os.path.join(self.mainFolder, 'Output', 'TaskList_'+lastModifiedTimeStr+'.xlsx')
+        newXlsxName = os.path.join(self.mainFolder,\
+                         'Output', 'TaskList_'+lastModifiedTimeStr+'.xlsx')
         writeJSON_from_df(newJsonName, taskTable)
         shutil.copyfile(self.taskFilePath, newXlsxName)
         os.utime(self.taskFilePath, (modifiedTime, modifiedTime))

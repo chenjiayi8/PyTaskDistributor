@@ -12,7 +12,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 def sleepMins(numMin): #for KeyboardInterrupt 
-    for i in range(numMin*60):
+    for i in range(round(numMin*60)):
         time.sleep(1)
         
 def emptySheetExcludeHeaders(ws):
@@ -20,6 +20,18 @@ def emptySheetExcludeHeaders(ws):
         if i != 0:                      
             for cell in row:
                 cell.value = None
+    
+def getLatestFileInFolder(folder):
+    if not os.path.isdir(folder):
+        return None
+    fileList = os.listdir(folder)
+    pathList = [os.path.join(folder, file) for file in fileList]
+    pathList_file = list(filter(os.path.isfile, pathList))
+    if len(pathList_file) == 0:
+        return None
+    matModifiedTime = [os.path.getmtime(path) for path in pathList_file]
+    targetIdx = matModifiedTime.index(max(matModifiedTime))
+    return pathList_file[targetIdx]
     
 def getFileSuffix(path):
     basename = os.path.basename(path)
@@ -39,7 +51,8 @@ def updateXlsxFile(path_xlsx, df, sheet_name='Sheet1'):
         writer.book = book
         writer.sheets = {ws.title: ws for ws in book.worksheets}
         emptySheetExcludeHeaders(writer.book[sheet_name])
-        df.to_excel(writer, sheet_name=sheet_name, startrow=1, header=False,index=False)
+        df.to_excel(writer, sheet_name=sheet_name,\
+                    startrow=1, header=False,index=False)
         writer.save() 
     
 def markFinishedTasks(taskTable, results=[], taskIdx=[]):
@@ -63,7 +76,8 @@ def getProcessList():
             cmdline = ' '.join(proc.cmdline())
             data.append([proc.pid, proc.username(), proc.name(),
                      0, proc.memory_percent(), cmdline])
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        except (psutil.NoSuchProcess, psutil.AccessDenied,\
+                psutil.ZombieProcess):
             pass
     return pd.DataFrame(data=data, columns=columns)
 
@@ -74,7 +88,7 @@ def getProcessCPU(pid):
     except:
         return 0.0
 
-def sendEmail(subject, content, receiverEmail ="j.chen-2@tudelft.nl", imagePath=None):
+def sendEmail(subject,content,receiver="j.chen-2@tudelft.nl",imagePath=None):
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.image import MIMEImage
@@ -91,7 +105,7 @@ def sendEmail(subject, content, receiverEmail ="j.chen-2@tudelft.nl", imagePath=
     #Send the mail
     msg = MIMEMultipart()
     msg['From'] = senderEmail
-    msg['To'] = receiverEmail
+    msg['To'] = receiver
     msg['Subject'] = subject
     
     
@@ -102,4 +116,4 @@ def sendEmail(subject, content, receiverEmail ="j.chen-2@tudelft.nl", imagePath=
         image = MIMEImage(img_data, name=os.path.basename(imagePath))
         msg.attach(image)
     text = msg.as_string()
-    server.sendmail(senderEmail,receiverEmail, text)
+    server.sendmail(senderEmail,receiver, text)

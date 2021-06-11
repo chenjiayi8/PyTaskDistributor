@@ -27,15 +27,16 @@ class Session:
         self.factoryFolder = server.factoryFolder
         self.deliveryFolderPath = server.deliveryFolderPath
         self.matFolderPath = server.matFolderPath
-        self.logFile = os.path.join(self.factoryFolder, 'Output', name, name+'.txt')
+        self.logFile = os.path.join(self.factoryFolder,\
+                                    'Output', name, name+'.txt')
 
     def runMatlabUnfinishedTasks(self, input):
         time.sleep(random.randint(30, 60))
 #        print("Creating matlab engine for {}".format(input))
         eng = matlab.engine.start_matlab()
 #        print("Have matlab engine for {}".format(input))
-        output, outputFolderName = eng.MatlabToPyRunUnfinishedTasks(input, nargout=2)
-        return output, outputFolderName
+        output, folderName = eng.MatlabToPyRunUnfinishedTasks(input, nargout=2)
+        return output, folderName
     
     
     def runMatlabNewTasks(self, input):
@@ -46,8 +47,8 @@ class Session:
 #        print("Creating matlab engine for {}".format(input))
         eng    = matlab.engine.start_matlab()
 #        print("Have matlab engine for {}".format(input))
-        output, outputFolderName = eng.MatlabToPyRunNewTasks(inputs, nargout=2)
-        return output, outputFolderName
+        output, folderName = eng.MatlabToPyRunNewTasks(inputs, nargout=2)
+        return output, folderName
     
     def makedirs(self, folder):
         if not os.path.isdir(folder):
@@ -61,7 +62,8 @@ class Session:
         last_parts = [item.replace(targetFolder, '') for item in itemList]
         for i in range(len(itemList)):
             item = itemList[i]
-            path_new = os.path.join(self.deliveryFolderPath, basename, last_parts[i])
+            path_new = os.path.join(self.deliveryFolderPath,\
+                                    basename, last_parts[i])
             if os.path.isdir(item):
                 self.makedirs(path_new)
             if os.path.isfile(item):
@@ -73,13 +75,15 @@ class Session:
         os.chdir(self.factoryFolder)
         input_type = type(input)
         if input_type is str:
-            output, outputFolderName = self.runMatlabUnfinishedTasks(input)
+            output, folderName = self.runMatlabUnfinishedTasks(input)
         else:
-            output, outputFolderName = self.runMatlabNewTasks(input)
-        sourceFolder = os.path.join(self.factoryFolder, 'Output', outputFolderName)
-        targetFolder = os.path.join(self.matFolderPath, outputFolderName)
-        copy_tree(sourceFolder, targetFolder)#copy simulation results to task result folder
-        self.deliveryTask(targetFolder)# delivery everything excluding mat file
+            output, folderName = self.runMatlabNewTasks(input)
+        sourceFolder = os.path.join(self.factoryFolder, 'Output', folderName)
+        targetFolder = os.path.join(self.matFolderPath, folderName)
+        #copy simulation results to task result folder
+        copy_tree(sourceFolder, targetFolder)
+        # delivery everything excluding mat file
+        self.deliveryTask(targetFolder)
         shutil.rmtree(sourceFolder)
         os.chdir(self.deglobfaultFolder)
         return output
@@ -95,7 +99,8 @@ class Session:
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as e:
-            print ("Need assisstance for unexpected error:\n {}".format(sys.exc_info()))
+            print ("Need assisstance for unexpected error:\n {}"\
+                   .format(sys.exc_info()))
             traceBackObj = sys.exc_info()[2]
             traceback.print_tb(traceBackObj)
             with open(self.logFile, 'a') as f:

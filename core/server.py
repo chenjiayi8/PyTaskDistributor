@@ -7,14 +7,14 @@ Created on Fri Jun  4 13:21:08 2021
 """
 
 from PyTaskDistributor.util.others import (
-        sleepMins, getProcessList,
-        getProcessCPU)
+        sleepMins, getProcessList, getLatestFileInFolder, getProcessCPU)
 from PyTaskDistributor.util.json import (
-        writeJSON_from_dict, readJSON_to_df, readJSON_to_dict)
+         readJSON_to_df, readJSON_to_dict)
 from PyTaskDistributor.core.session import Session
 from multiprocessing import Process, Manager
 import os
 import sys
+#import time
 from datetime import datetime
 import numpy as np
 import shutil
@@ -28,24 +28,29 @@ import psutil
 class Server:
     def __init__(self, setup):
         self.setup = setup
-        self.CPU_percent_max = float(setup['CPU_max'])*100
-        self.MEM_percent_max = float(setup['MEM_max'])*100
+        self.CPU_max = float(setup['CPU_max'])*100
+        self.MEM_max = float(setup['MEM_max'])*100
         self.defaultFolder = os.getcwd()
         self.serverFolder = os.path.join(self.defaultFolder, 'Servers')
         self.hostName = self.setup['hostname']
         self.userName = os.popen('whoami').readline().split('\n')[0]
         if not os.path.isdir(self.serverFolder):
             os.makedirs(self.serverFolder)
-        self.status_file = os.path.join(self.serverFolder, self.hostName+'.json')
+        self.status_file = os.path.join(self.serverFolder,
+                                        self.hostName+'.json')
         self.mainFolder = self.setup['order']
         self.factoryFolder = self.setup['factory']
         self.deliveryFolder = self.setup['delivery']
         self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
-        self.finishedTaskFolder = os.path.join(self.mainFolder, 'FinishedTasks')
+        self.finishedTaskFolder = os.path.join(self.mainFolder,
+                                               'FinishedTasks')
         self.excludedFolder=['Output', 'NewTasks', 'FinishedTasks', '.git']
         self.manager = Manager()
         self.currentSessions = self.manager.dict()
         self.processes = {}
+        self.status_names = ['CPU_total', 'MEM_total',
+                             'CPU_matlab', 'MEM_matlab']
+        self.status_record = np.zeros(len(self.status_names)+1, dtype=float)
         self.initialise()
 
     
@@ -55,19 +60,19 @@ class Server:
             #update config
             self.statusDict['name'] = self.hostName
             self.statusDict['user'] = self.userName
-            self.statusDict['CPU_max'] = self.CPU_percent_max
-            self.statusDict['MEM_max'] = self.MEM_percent_max
+            self.statusDict['CPU_max'] = self.CPU_max
+            self.statusDict['MEM_max'] = self.MEM_max
         else:
             statusDict = OrderedDict()
             statusDict['name'] = self.hostName
             statusDict['user'] = self.userName
-            statusDict['CPU_max'] = self.CPU_percent_max
-            statusDict['MEM_max'] = self.MEM_percent_max
+            statusDict['CPU_max'] = self.CPU_max
+            statusDict['MEM_max'] = self.MEM_max
             statusDict['msg'] = ''
             statusDict['currentSessions'] = []
             statusDict['finishedSessions'] = OrderedDict()
             self.statusDict = statusDict
-        self.updateServerStatus()
+        self.recordStatus()
         self.writeServerStatus()
     
     def onStartTask(self):
@@ -79,26 +84,40 @@ class Server:
             self.writeServerStatus()
     
     def writeServerStatus(self):
-        writeJSON_from_dict(self.status_file, self.statusDict)
+        #calculate the average CPU/MEM percents and write
+        averages = self.status_record[:-1]/self.status_record[-1]
+        for i in range(len(self.status_names)):
+            self.statusDict[self.status_names[i]] = averages[i]
+#        writeJSON_from_dict(self.status_file, self.statusDict)
+        self.status_record = np.zeros(len(self.status_names)+1, dtype=float)
+    
+    def recordStatus(self):
+        self.updateServerStatus()
+        state = [float(self.statusDict[s]) for s in self.status_names]
+        self.status_record[:-1] += state
+        self.status_record[-1] += 1
+        pass
     
     def updateServerStatus(self):
         df = getProcessList()
         df_user = df[df['User']==self.userName]
         #only count matlab process opened by Python
-        df_matlab = df_user[df_user['Command'].apply(lambda x: 'matlab -mvminputpipe' in x.lower())]
-        self.statusDict['CPU_total'] = str(round(psutil.cpu_percent(interval=1), 2))
-        self.statusDict['MEM_total'] = str(round(sum(df['Mem']), 2))
+        df_matlab = df_user[df_user['Command'].apply(\
+                            lambda x: 'matlab -mvminputpipe' in x.lower())]
+        self.statusDict['CPU_total'] = round(psutil.cpu_percent(interval=1), 2)
+        self.statusDict['MEM_total'] = round(sum(df['Mem']), 2)
         if len(df_matlab) > 0:
             df_matlab = df_matlab.reset_index(drop=True)
-            #measure the CPU usage of my matlab process
+            #measure the CPU usage of matlab process
             df_matlab['CPU'] = df_matlab['pid'].apply(getProcessCPU)
-            self.statusDict['num_matlab'] = str(len(df_matlab))
-            self.statusDict['CPU_matlab'] = str(round(sum(np.array(df_matlab['CPU'])/100), 2))
-            self.statusDict['MEM_matlab'] = str(round(sum(df_matlab['Mem']), 2))
+            self.statusDict['num_matlab'] = len(df_matlab)
+            self.statusDict['CPU_matlab'] = \
+                        round(sum(np.array(df_matlab['CPU'])/100), 2)
+            self.statusDict['MEM_matlab'] = round(sum(df_matlab['Mem']), 2)
         else:
-            self.statusDict['num_matlab'] = '0'
-            self.statusDict['CPU_matlab'] = '0'
-            self.statusDict['MEM_matlab'] = '0'
+            self.statusDict['num_matlab'] = 0
+            self.statusDict['CPU_matlab'] = 0.0
+            self.statusDict['MEM_matlab'] = 0.0
             
         self.statusDict['updated_time'] = datetime.now().isoformat()
     
@@ -108,37 +127,37 @@ class Server:
             for session in sessions:
                 key = self.taskTimeStr+'_'+session
                 if key not in self.statusDict['finishedSessions']:
-                    matFolder = os.path.join(self.matFolderPath, session, 'data')
-                    if os.path.isdir(matFolder):
-                        matList = os.listdir(matFolder)
-                        if len(matList) > 0:
-                            matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
-                            targetMatIdx = matModifiedTime.index(max(matModifiedTime))
-                            targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
-                            targetMatPaths.append(targetMatPath)
-                        else:
-                            logFile=matFolder = os.path.join(self.matFolderPath, session, session+'.txt')
-                            with open(logFile, 'rt') as f:
-                                lines = f.read().splitlines()
-                                lines = lines[1:]
-                                msg = {}
-                                msg['Finished'] = 1
-                                msg['Comments'] = '|'.join(lines)
-                                self.statusDict['finishedSessions'][key] = msg
+                    matFolder = os.path.join(\
+                                     self.matFolderPath, session, 'data')
+                    matPath = getLatestFileInFolder(matFolder)
+                    if matPath:
+                        targetMatPaths.append(matPath)
+                    else:
+                        logFile = os.path.join(self.matFolderPath,\
+                                               session, session+'.txt')
+                        with open(logFile, 'rt') as f:
+                            lines = f.read().splitlines()
+                            lines = lines[1:]
+                            msg = {}
+                            msg['Finished'] = 1
+                            msg['Comments'] = '|'.join(lines)
+                            self.statusDict['finishedSessions'][key] = msg
                             
             if len(targetMatPaths) > 0:
                 os.chdir(self.factoryFolder)
                 eng = matlab.engine.start_matlab()
                 for targetMatPath in targetMatPaths:
                     print("Loading {}".format(targetMatPath))
-                    [output, session_name]  = eng.postProcessHandlesV2(targetMatPath, nargout=2)
+                    [output, session_name]  = eng.postProcessHandlesV2(\
+                                    targetMatPath, nargout=2)
                     key = self.taskTimeStr+'_'+session_name
                     if output['Finished'] == 1.0:
                         output['Comments'] = os.path.basename(targetMatPath)
                         self.statusDict['finishedSessions'][key] = output
                         print("{} is marked".format(key))
                     else:
-                        msg = "Mark {} with err message {}\n".format(targetMatPath, output['err_msg'])
+                        msg = "Mark {} with err message {}\n"\
+                        .format(targetMatPath, output['err_msg'])
                         self.statusDict['msg'] += msg
                         print(msg)
                 os.chdir(self.defaultFolder) 
@@ -159,9 +178,9 @@ class Server:
     
     def getUnfinishedSessions(self):
         outputFolder = os.path.join(self.factoryFolder, 'Output')
-        unfinishedSessions = os.listdir(outputFolder)
-        unfinishedSessions = [session for session in unfinishedSessions if session.startswith('Task-')]
-        return unfinishedSessions, outputFolder    
+        unfinishedSs = os.listdir(outputFolder)
+        unfinishedSs = [s for s in unfinishedSs if s.startswith('Task-')]
+        return unfinishedSs, outputFolder    
     
     def removeFinishedInputs(self, df):
         if len(df) == 0:
@@ -176,22 +195,20 @@ class Server:
     
     def createSessions(self, df):
         unfinishedSessions, outputFolder = self.getUnfinishedSessions()
-        input_columns = ('Num, totalTime, tauMin, tauMax, wcRatio, maxSD, '
-                         'kd1, kd2, kd3, kd4, kd5, A2, A3, A4, kg1, kg2, kg3, '
+        input_columns = ('Num, totalTime, tauMin, tauMax, wcRatio, maxSD,'
+                         'kd1, kd2, kd3, kd4, kd5, A2, A3, A4, kg1, kg2, kg3,'
                          'kg4, initialSaturation, UUID')
-        input_columns = input_columns.split(', ')
+        input_columns = input_columns.replace(' ', '')
+        input_columns = input_columns.split(',')
         sessions = {}
         for i in range(len(df)):
             session = df.index[i]
             if session in unfinishedSessions:#ran before
                 if session not in self.currentSessions:#not running now
                     matFolder = os.path.join(outputFolder, session, 'data')
-                    matList = os.listdir(matFolder)
-                    if len(matList) > 0:#Progress is saved
-                        matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
-                        targetMatIdx = matModifiedTime.index(max(matModifiedTime))
-                        targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
-                        sessions[session] = Session(self, session, targetMatPath)
+                    matPath = getLatestFileInFolder(matFolder)
+                    if matPath:#Progress is saved
+                        sessions[session] = Session(self, session, matPath)
                     else:#Nothing is saved
                         input = list(df.loc[session, input_columns])
                         sessions[session] = Session(self, session, input)
@@ -213,7 +230,18 @@ class Server:
 
     def updateSessionsStatus(self):
         for k, v in self.currentSessions.items():
-            if k not in self.statusDict['currentSessions']:# add session
+            # check process status
+            if k not in self.processes:
+                self.statusDict['msg'].append(\
+                               '{} is not in Processes'.format(k))
+            else:
+                p = self.processes[k]
+                if not p.is_alive():
+                    if p.exitcode != 0:
+                        self.statusDict['msg'].append(
+                        '{} is exited with exitcode {}'.format(k, p.exitcode))
+            # add session
+            if k not in self.statusDict['currentSessions']:
                 self.statusDict['currentSessions'].append(k)
             if v != 1: # remove session
                 self.statusDict['finishedSessions'][k] = v
@@ -221,9 +249,6 @@ class Server:
                 del self.currentSessions[k]
                 del self.processes[k]
         self.removeFinishedSessionsStatus()
-#        print('currentSessions0', self.currentSessions)
-#        print('currentSessions1', self.statusDict['currentSessions'])
-#        print('finishedSessions', self.statusDict['finishedSessions'])
     
     def removeFinishedSessionsStatus(self):
         taskList = self.getTaskList(folder=self.finishedTaskFolder)
@@ -243,8 +268,10 @@ class Server:
     
     def updateFolderPaths(self, task):
         timeStr = self.getTimeStr(task)
-        self.deliveryFolderPath = os.path.join(self.deliveryFolder, 'Output', timeStr)
-        self.matFolderPath = os.path.join(self.factoryFolder, 'Output', timeStr)
+        self.deliveryFolderPath = os.path.join(\
+                                   self.deliveryFolder, 'Output', timeStr)
+        self.matFolderPath = os.path.join(\
+                                  self.factoryFolder, 'Output', timeStr)
         self.taskTimeStr = timeStr
         self.makedirs(self.deliveryFolderPath)
         self.makedirs(self.matFolderPath)
@@ -273,12 +300,13 @@ class Server:
                     shutil.rmtree(file_path)
     
     def prepareFactory(self):
-        sync(self.mainFolder, self.factoryFolder, 'sync', create=True, exclude=self.excludedFolder)
+        sync(self.mainFolder, self.factoryFolder, 'sync',\
+             create=True, exclude=self.excludedFolder)
     
     def getTaskList(self, folder=None):
         if folder == None:
             folder = self.newTaskFolder
-        taskList = [file for file in os.listdir(folder) if file.endswith(".json")]
+        taskList = [f for f in os.listdir(folder) if f.endswith(".json")]
         return taskList
     
     def getTaskTable(self, task):
@@ -312,26 +340,33 @@ class Server:
             sessions = self.createSessions(df)
             self.runSessions(sessions)
         
-#        time.sleep(10)
-        sleepMins(1)# wait for the starting of simulation
+        # wait for the starting of simulation
+        sleepMins(1)
         self.updateSessionsStatus()
-        self.updateServerStatus()
-        self.writeServerStatus()
     
     def main(self):
         numMin = random.randint(3,5)
+        interval_seconds = 30
+        interval_mins = interval_seconds/60
+        num_interval = round(numMin*60/interval_seconds)
         try:
             self.onInterval()
-            nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")
+            nowTimeStr = datetime.strftime(\
+                               datetime.now(),  "%H:%M:%S %d/%m/%Y")
             msg = "{}: Sleeping for {} mins".format(nowTimeStr, numMin)
 #            print(msg)
             print("\r", msg, end='')
-            sleepMins(numMin)
+            
+            for i in range(num_interval):
+                self.recordStatus()
+                sleepMins(interval_mins)
+            self.writeServerStatus()
             needAssistance = False
         except (KeyboardInterrupt, SystemExit):
             raise
         except:
-            print ("Need assisstance for unexpected error:\n {}".format(sys.exc_info()))
+            print ("Need assisstance for unexpected error:\n {}"\
+                   .format(sys.exc_info()))
             traceBackObj = sys.exc_info()[2]
             traceback.print_tb(traceBackObj)
             needAssistance = True
