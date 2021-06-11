@@ -9,6 +9,7 @@ Created on Sat Jul 18 10:05:04 2020
 from PyTaskDistributor.util.json import (
         readJSON_to_df, writeJSON_from_df, readJSON_to_dict)
 from PyTaskDistributor.util.others import updateXlsxFile, sleepMins
+from PyTaskDistributor.util.monitor import Monitor
 import os
 import sys
 from datetime import datetime
@@ -39,6 +40,8 @@ class Master:
         self.finishedTaskFolder = os.path.join(self.mainFolder, 'FinishedTasks')
         self.taskFilePath = os.path.join(self.mainFolder, 'TaskList.xlsx')
         self.lastModifiedTime = ''
+        self.monitor = Monitor(self)
+        self.msgs = []
         pass
     
     def main(self):
@@ -49,12 +52,14 @@ class Master:
             self.updateServerList()
             self.updateTaskStatus()
             self.workloadBalance()
-            lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, 
-                                                      "%H:%M:%S %d/%m/%Y")
-            nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")
-            msg = "{}: Last task is assigned at {}, sleeping for {} mins".format(nowTimeStr, lastModifiedTimeStr, numMin)
-            print(msg)
+#            lastModifiedTimeStr = datetime.strftime(self.lastModifiedTime, 
+#                                                      "%H:%M:%S %d/%m/%Y")
+#            nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")
+#            msg = "{}: Last task is assigned at {}, sleeping for {} mins".format(nowTimeStr, lastModifiedTimeStr, numMin)
+#            print(msg)
 #            print("\r", msg, end='')
+            self.monitor.updateProgress(numMin)
+            self.printMsgs()
             sleepMins(numMin)
             needAssistance = False
         except (KeyboardInterrupt, SystemExit):
@@ -65,7 +70,12 @@ class Master:
             traceback.print_tb(traceBackObj)
             needAssistance = True
         return needAssistance
-            
+     
+    def printMsgs(self):
+        for msg in self.msgs:
+            print(msg)
+        self.msgs.clear()
+    
     def getFileLastModifiedTime(self):
         taskTable_modifiedTime = datetime.fromtimestamp(os.path.getmtime(self.taskFilePath))
         return taskTable_modifiedTime
@@ -136,7 +146,8 @@ class Master:
                     num_target = len(intialTaskIdx)
                 for i in range(len(intialTaskIdx)):
                     df.loc[intialTaskIdx[i], 'HostName'] = server['name']
-            print("Assign {} sessions for Server {}".format(num_target, server['name']))
+            msg = "Assign {} new sessions for Server {}".format(num_target, server['name'])
+            self.msgs.append(msg)
         writeJSON_from_df(task_path, df)
     
     def getFinishedSessions(self):

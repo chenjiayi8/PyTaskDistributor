@@ -324,9 +324,8 @@ class Server:
             self.onInterval()
             nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")
             msg = "{}: Sleeping for {} mins".format(nowTimeStr, numMin)
-            print(msg)
-            print("\r", msg, end='')
 #            print(msg)
+            print("\r", msg, end='')
             sleepMins(numMin)
             needAssistance = False
         except (KeyboardInterrupt, SystemExit):
