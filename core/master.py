@@ -53,8 +53,8 @@ class Master:
                                                       "%H:%M:%S %d/%m/%Y")
             nowTimeStr = datetime.strftime(datetime.now(),  "%H:%M:%S %d/%m/%Y")
             msg = "{}: Last task is assigned at {}, sleeping for {} mins".format(nowTimeStr, lastModifiedTimeStr, numMin)
-#            print(msg)
-            print("\r", msg, end='')
+            print(msg)
+#            print("\r", msg, end='')
             sleepMins(numMin)
             needAssistance = False
         except (KeyboardInterrupt, SystemExit):
@@ -102,6 +102,7 @@ class Master:
         for server in self.serverList:
             # check if assigned sessions are running
             skipFlag = False
+            num_target = 0
             df_assigned = df[(df['HostName']==server['name'])&\
                              (df['Finished']!=1) ]
             for idx in df_assigned.index:
@@ -123,14 +124,19 @@ class Master:
                 num_target = min([num_cpu, num_mem])
                 if num_target > 2: #Max add 2 per cyce 
                     num_target = 2
+                if num_target < 0:
+                    num_target = 0
             df_temp = df[df['HostName']=='']
             if len(df_temp) > 0:#still have some tasks to do
                 intialTaskIdx = list(df_temp.index)
                 random.shuffle(intialTaskIdx)
                 if len(intialTaskIdx) > num_target:
                     intialTaskIdx = intialTaskIdx[:num_target]
+                else:
+                    num_target = len(intialTaskIdx)
                 for i in range(len(intialTaskIdx)):
                     df.loc[intialTaskIdx[i], 'HostName'] = server['name']
+            print("Assign {} sessions for Server {}".format(num_target, server['name']))
         writeJSON_from_df(task_path, df)
     
     def getFinishedSessions(self):

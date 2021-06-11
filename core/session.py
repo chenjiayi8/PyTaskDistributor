@@ -27,14 +27,13 @@ class Session:
         self.factoryFolder = server.factoryFolder
         self.deliveryFolderPath = server.deliveryFolderPath
         self.matFolderPath = server.matFolderPath
-        self.taskFolderPath = server.taskFolderPath
         self.logFile = os.path.join(self.factoryFolder, 'Output', name, name+'.txt')
 
     def runMatlabUnfinishedTasks(self, input):
         time.sleep(random.randint(30, 60))
-        print("Creating matlab engine for {}".format(input))
+#        print("Creating matlab engine for {}".format(input))
         eng = matlab.engine.start_matlab()
-        print("Have matlab engine for {}".format(input))
+#        print("Have matlab engine for {}".format(input))
         output, outputFolderName = eng.MatlabToPyRunUnfinishedTasks(input, nargout=2)
         return output, outputFolderName
     
@@ -44,9 +43,9 @@ class Session:
         uuid = input[-1]
         inputs = [float(i) for i in input[:-1]] 
         inputs.append(uuid)
-        print("Creating matlab engine for {}".format(input))
+#        print("Creating matlab engine for {}".format(input))
         eng    = matlab.engine.start_matlab()
-        print("Have matlab engine for {}".format(input))
+#        print("Have matlab engine for {}".format(input))
         output, outputFolderName = eng.MatlabToPyRunNewTasks(inputs, nargout=2)
         return output, outputFolderName
     

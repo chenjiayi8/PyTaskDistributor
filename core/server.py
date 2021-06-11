@@ -52,6 +52,11 @@ class Server:
     def initialise(self):
         if os.path.isfile(self.status_file):
             self.statusDict = readJSON_to_dict(self.status_file)
+            #update config
+            self.statusDict['name'] = self.hostName
+            self.statusDict['user'] = self.userName
+            self.statusDict['CPU_max'] = self.CPU_percent_max
+            self.statusDict['MEM_max'] = self.MEM_percent_max
         else:
             statusDict = OrderedDict()
             statusDict['name'] = self.hostName
@@ -178,18 +183,21 @@ class Server:
         sessions = {}
         for i in range(len(df)):
             session = df.index[i]
-            if session in unfinishedSessions:
-                if session not in self.statusDict['currentSessions']:
+            if session in unfinishedSessions:#ran before
+                if session not in self.currentSessions:#not running now
                     matFolder = os.path.join(outputFolder, session, 'data')
                     matList = os.listdir(matFolder)
-                    if len(matList) > 0:
+                    if len(matList) > 0:#Progress is saved
                         matModifiedTime = [os.path.getmtime(os.path.join(matFolder, mat)) for mat in matList]
                         targetMatIdx = matModifiedTime.index(max(matModifiedTime))
                         targetMatPath = os.path.join(matFolder, matList[targetMatIdx])
                         sessions[session] = Session(self, session, targetMatPath)
-                        continue;
-            input = list(df.loc[session, input_columns])
-            sessions[session] = Session(self, session, input)
+                    else:#Nothing is saved
+                        input = list(df.loc[session, input_columns])
+                        sessions[session] = Session(self, session, input)
+            else:# new session
+                input = list(df.loc[session, input_columns])
+                sessions[session] = Session(self, session, input)
         return sessions
     
     def checkProcesses(self):
@@ -293,6 +301,8 @@ class Server:
             taskList.remove(cleanTask)
             os.unlink(os.path.join(self.newTaskFolder, cleanTask))
         for task in taskList:
+            if '_clean.json' in task:
+                continue #skip clean task for another server
             # announce the start of simulation
             print("Working on {}".format(task))
             self.updateFolderPaths(task)#paths for output
