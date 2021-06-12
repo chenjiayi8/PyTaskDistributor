@@ -30,19 +30,19 @@ class Session:
         self.logFile = os.path.join(self.factoryFolder,\
                                     'Output', name, name+'.txt')
 
-    def runMatlabUnfinishedTasks(self, input):
-        time.sleep(random.randint(30, 60))
+    def runMatlabUnfinishedTask(self):
+        time.sleep(random.randint(1, 30))
 #        print("Creating matlab engine for {}".format(input))
         eng = matlab.engine.start_matlab()
 #        print("Have matlab engine for {}".format(input))
-        output, folderName = eng.MatlabToPyRunUnfinishedTasks(input, nargout=2)
+        output, folderName = eng.MatlabToPyRunUnfinishedTasks(self.input, nargout=2)
         return output, folderName
     
     
-    def runMatlabNewTasks(self, input):
+    def runMatlabNewTask(self):
 #        time.sleep(random.randint(60, 120))
-        uuid = input[-1]
-        inputs = [float(i) for i in input[:-1]] 
+        uuid = self.input[-1]
+        inputs = [float(i) for i in self.input[:-1]] 
         inputs.append(uuid)
 #        print("Creating matlab engine for {}".format(input))
         eng    = matlab.engine.start_matlab()
@@ -71,13 +71,13 @@ class Session:
                     shutil.copyfile(item, path_new)
     
     
-    def runMatlabTasks(self, input):
+    def runMatlabTask(self):
         os.chdir(self.factoryFolder)
-        input_type = type(input)
+        input_type = type(self.input)
         if input_type is str:
-            output, folderName = self.runMatlabUnfinishedTasks(input)
+            output, folderName = self.runMatlabUnfinishedTask()
         else:
-            output, folderName = self.runMatlabNewTasks(input)
+            output, folderName = self.runMatlabNewTask()
         sourceFolder = os.path.join(self.factoryFolder, 'Output', folderName)
         targetFolder = os.path.join(self.matFolderPath, folderName)
         #copy simulation results to task result folder
@@ -93,7 +93,7 @@ class Session:
             self.server.currentSessions[self.name] = 1
             print("Working on  {}".format(self.name))
     #        print("Input is {}".format(self.input))
-            output = self.runMatlabTasks(self.input)
+            output = self.runMatlabTask()
             self.server.currentSessions[self.name] = output
             print("Finishing {}".format(self.name))
         except (KeyboardInterrupt, SystemExit):
@@ -106,5 +106,6 @@ class Session:
             with open(self.logFile, 'a') as f:
                 f.write(str(e))
                 f.write(traceback.format_exc())
+            self.server.dealWithFailedSession(self.name)
 if __name__ == '__main__':
     pass

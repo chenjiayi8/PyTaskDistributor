@@ -17,7 +17,7 @@ import pandas as pd
 from collections import OrderedDict
 
 def printTable(table):
-    msg = tb.tabulate(table.values, table.columns, tablefmt="pipe")
+    msg = tb.tabulate(table.values, table.columns, tablefmt="grid")
     print(msg)
 
 def parseTime(t):
@@ -58,7 +58,7 @@ class Monitor():
         print("Updated on {} and will fresh in {} mins".\
               format(parseTime(datetime.now()), numMins))
         self.printTaskProgress()
-        self.printServerProgress()
+        return self.printServerProgress()
 
     def printTaskProgress(self):
         print("Task:")
@@ -116,8 +116,24 @@ class Monitor():
         columns_new = [ a+'(%)' if isCPUorMEM(a) else a for a in df.columns]
         columns_new[idx_num_matlab+1] = 'num_running'
         df.columns = columns_new
+        numColumns = len(df.columns)
+        sep_idx = 6
         
-        printTable(df)
+        df1 = df.iloc[:, range(sep_idx)]
+        df2 = df.iloc[:, [0]+ list(range(sep_idx, numColumns))]
+        columns_df2 = list(df2.columns)
+        columns_df2[0] = ''
+        df2.columns = columns_df2
+        part1 = [list(df1.columns)] + df1.values.tolist()
+        part2 = [list(df2.columns)] + df2.values.tolist()
+        for p in part2:
+            p.insert(1, '')
+        whole = part1 + part2
+        table = tb.tabulate(whole,  tablefmt="grid")
+        print(table)
+#        printTable(whole)
+#        printTable(df2)
+#        return df
 
 
 if __name__ == '__main__':
@@ -129,7 +145,7 @@ if __name__ == '__main__':
     master = Master(setup)
     master.updateServerList()
     monitor = Monitor(master)
-    monitor.updateProgress()
+    df = monitor.updateProgress()
 #msg = printTable(df)
 #df = pd.DataFrame(columns=['A'])
 #df = pd.concat([pd.DataFrame(data=[[i, 1]], columns=['A', 'B']) for i in range(5)],

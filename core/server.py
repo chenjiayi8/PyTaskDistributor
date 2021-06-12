@@ -9,7 +9,7 @@ Created on Fri Jun  4 13:21:08 2021
 from PyTaskDistributor.util.others import (
         sleepMins, getProcessList, getLatestFileInFolder, getProcessCPU)
 from PyTaskDistributor.util.json import (
-         readJSON_to_df, readJSON_to_dict)
+         writeJSON_from_dict, readJSON_to_df, readJSON_to_dict)
 from PyTaskDistributor.core.session import Session
 from multiprocessing import Process, Manager
 import os
@@ -86,9 +86,10 @@ class Server:
     def writeServerStatus(self):
         #calculate the average CPU/MEM percents and write
         averages = self.status_record[:-1]/self.status_record[-1]
+        averages = averages.round(2)
         for i in range(len(self.status_names)):
             self.statusDict[self.status_names[i]] = averages[i]
-#        writeJSON_from_dict(self.status_file, self.statusDict)
+        writeJSON_from_dict(self.status_file, self.statusDict)
         self.status_record = np.zeros(len(self.status_names)+1, dtype=float)
     
     def recordStatus(self):
@@ -185,6 +186,7 @@ class Server:
     def removeFinishedInputs(self, df):
         if len(df) == 0:
             return df
+        self.makedirs(self.matFolderPath)# create if doest not exist
         finishedSessions = os.listdir(self.matFolderPath)
         unwantedInputs = []
         for session in finishedSessions:
@@ -193,6 +195,16 @@ class Server:
         df2 = df.drop(unwantedInputs)
         return df2
     
+    def isRunning(self, session):
+        if session not in self.processes:
+            return False
+        else:
+            p = self.processes[session]
+            if not p.is_alive():
+                return False
+            else:
+                return True 
+        
     def createSessions(self, df):
         unfinishedSessions, outputFolder = self.getUnfinishedSessions()
         input_columns = ('Num, totalTime, tauMin, tauMax, wcRatio, maxSD,'
@@ -204,7 +216,7 @@ class Server:
         for i in range(len(df)):
             session = df.index[i]
             if session in unfinishedSessions:#ran before
-                if session not in self.currentSessions:#not running now
+                if not self.isRunning(session):#not running now
                     matFolder = os.path.join(outputFolder, session, 'data')
                     matPath = getLatestFileInFolder(matFolder)
                     if matPath:#Progress is saved
@@ -217,29 +229,48 @@ class Server:
                 sessions[session] = Session(self, session, input)
         return sessions
     
+    def dealWithFailedSession(self, name):
+        self.statusDict['msg'] +='{} failed on {}\n'\
+                    .format(name, datetime.now())
+        self.statusDict['currentSessions'].remove(name)
+        del self.currentSessions[name]
+#        del self.processes[name]
+        
+    def workloadBalance(self, sessions):
+        if self.statusDict['CPU_total'] > self.CPU_max: return None
+        if self.statusDict['MEM_total'] > self.MEM_max: return None
+        if len(sessions) > 3:
+            keys = list(sessions.keys())
+            random.shuffle(keys)
+            keys_new = keys[:3]
+            sessions_new = {}
+            for k in keys_new: sessions_new[k] = sessions[k]
+            return sessions_new
+        return sessions
+    
     def checkProcesses(self):
         for k, v in self.processes.items():
             if not v.is_alive():
                 print("Process for {} is killed".format(k))
     
     def runSessions(self, sessions):
-        for k, v in sessions.items():
-            p = Process(target=v.main)
-            p.start()
-            self.processes[k] = p
+        if sessions:
+            for k, v in sessions.items():
+                p = Process(target=v.main)
+                p.start()
+                self.processes[k] = p
 
     def updateSessionsStatus(self):
         for k, v in self.currentSessions.items():
             # check process status
             if k not in self.processes:
-                self.statusDict['msg'].append(\
-                               '{} is not in Processes'.format(k))
+                self.statusDict['msg'] += '{} is not in Processes\n'.format(k)
             else:
                 p = self.processes[k]
                 if not p.is_alive():
                     if p.exitcode != 0:
-                        self.statusDict['msg'].append(
-                        '{} is exited with exitcode {}'.format(k, p.exitcode))
+                        self.statusDict['msg'] += \
+                        '{} is exited with exitcode {}\n'.format(k, p.exitcode)
             # add session
             if k not in self.statusDict['currentSessions']:
                 self.statusDict['currentSessions'].append(k)
@@ -338,6 +369,7 @@ class Server:
             df = self.getTaskTable(task)# check new task
             df = self.removeFinishedInputs(df)
             sessions = self.createSessions(df)
+            sessions = self.workloadBalance(sessions)
             self.runSessions(sessions)
         
         # wait for the starting of simulation
@@ -345,7 +377,7 @@ class Server:
         self.updateSessionsStatus()
     
     def main(self):
-        numMin = random.randint(3,5)
+        numMin = random.randint(2,4)
         interval_seconds = 30
         interval_mins = interval_seconds/60
         num_interval = round(numMin*60/interval_seconds)
@@ -354,8 +386,8 @@ class Server:
             nowTimeStr = datetime.strftime(\
                                datetime.now(),  "%H:%M:%S %d/%m/%Y")
             msg = "{}: Sleeping for {} mins".format(nowTimeStr, numMin)
-#            print(msg)
-            print("\r", msg, end='')
+            print(msg)
+#            print("\r", msg, end='')
             
             for i in range(num_interval):
                 self.recordStatus()

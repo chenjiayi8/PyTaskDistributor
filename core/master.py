@@ -111,6 +111,9 @@ class Master:
             # check if assigned sessions are running
             skipFlag = False
             num_target = 0
+            #assigned sessions but not running
+            if len(server['currentSessions']) > server['num_matlab']:
+                skipFlag = True
             df_assigned = df[(df['HostName']==server['name'])&\
                              (df['Finished']!=1) ]
             for idx in df_assigned.index:
