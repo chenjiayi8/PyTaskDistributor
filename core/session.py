@@ -15,7 +15,7 @@ import matlab.engine
 from distutils.dir_util import copy_tree
 import random
 from glob import glob
-from PyTaskDistributor.util.others import getFileSuffix
+from PyTaskDistributor.util.others import getFileSuffix, getLatestFileInFolder
 
 class Session:
     def __init__(self, server, name, input):
@@ -79,6 +79,9 @@ class Session:
         else:
             output, folderName = self.runMatlabNewTask()
         sourceFolder = os.path.join(self.factoryFolder, 'Output', folderName)
+        matFolder = os.path.join(sourceFolder, 'data')
+        matPath  = getLatestFileInFolder(matFolder)
+        output['Comments'] = os.path.basename(matPath)
         targetFolder = os.path.join(self.matFolderPath, folderName)
         #copy simulation results to task result folder
         copy_tree(sourceFolder, targetFolder)

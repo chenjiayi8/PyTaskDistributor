@@ -113,8 +113,7 @@ class Server:
         self.statusDict['CPU_total'] = round(psutil.cpu_percent(interval=1), 2)
         self.statusDict['MEM_total'] = round(sum(df['Mem']), 2)
         self.statusDict['DISK_total'] = self.getDiskUsagePercent()
-        self.statusDict['num_assigned'] =\
-                int(len(self.statusDict['currentSessions']))
+        self.statusDict['num_assigned'] = self.getNumAssigned()
         self.statusDict['num_finished'] =\
                 int(len(self.statusDict['finishedSessions']))
             
@@ -132,6 +131,17 @@ class Server:
             self.statusDict['MEM_matlab'] = 0.0
             
         self.statusDict['updated_time'] = datetime.now().isoformat()
+    
+    def getNumAssigned(self):
+        num_assigned = 0
+        taskList = self.getTaskList()
+        for task in taskList:
+            path = os.path.join(self.newTaskFolder, task)
+            df = readJSON_to_df(path)
+            df_assigned = df[df['HostName'] == self.hostName]
+            num_assigned += len(df_assigned)
+            
+        return num_assigned
     
     def markFinishedSession(self, sessions):
         if len(sessions) > 0:
