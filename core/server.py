@@ -76,7 +76,7 @@ class Server:
         self.writeServerStatus()
     
     def onStartTask(self):
-        if int(self.statusDict['num_matlab']) == 0:
+        if int(self.statusDict['num_running']) == 0:
             self.prepareFactory()
         sessions = self.getFinishedSessions()
         if sessions:
@@ -85,10 +85,11 @@ class Server:
     
     def writeServerStatus(self):
         #calculate the average CPU/MEM percents and write
-        averages = self.status_record[:-1]/self.status_record[-1]
-        averages = averages.round(2)
-        for i in range(len(self.status_names)):
-            self.statusDict[self.status_names[i]] = averages[i]
+        if self.status_record[-1] > 0:
+            averages = self.status_record[:-1]/self.status_record[-1]
+            averages = averages.round(2)
+            for i in range(len(self.status_names)):
+                self.statusDict[self.status_names[i]] = averages[i]
         writeJSON_from_dict(self.status_file, self.statusDict)
         self.status_record = np.zeros(len(self.status_names)+1, dtype=float)
     
@@ -99,6 +100,10 @@ class Server:
         self.status_record[-1] += 1
         pass
     
+    def getDiskUsagePercent(self):
+        (total, used, free) = shutil.disk_usage(self.factoryFolder)
+        return round(100*used/total, 2)
+    
     def updateServerStatus(self):
         df = getProcessList()
         df_user = df[df['User']==self.userName]
@@ -107,16 +112,22 @@ class Server:
                             lambda x: 'matlab -mvminputpipe' in x.lower())]
         self.statusDict['CPU_total'] = round(psutil.cpu_percent(interval=1), 2)
         self.statusDict['MEM_total'] = round(sum(df['Mem']), 2)
+        self.statusDict['DISK_total'] = self.getDiskUsagePercent()
+        self.statusDict['num_assigned'] =\
+                int(len(self.statusDict['currentSessions']))
+        self.statusDict['num_finished'] =\
+                int(len(self.statusDict['finishedSessions']))
+            
         if len(df_matlab) > 0:
             df_matlab = df_matlab.reset_index(drop=True)
             #measure the CPU usage of matlab process
             df_matlab['CPU'] = df_matlab['pid'].apply(getProcessCPU)
-            self.statusDict['num_matlab'] = len(df_matlab)
+            self.statusDict['num_running'] = len(df_matlab)
             self.statusDict['CPU_matlab'] = \
                         round(sum(np.array(df_matlab['CPU'])/100), 2)
             self.statusDict['MEM_matlab'] = round(sum(df_matlab['Mem']), 2)
         else:
-            self.statusDict['num_matlab'] = 0
+            self.statusDict['num_running'] = 0
             self.statusDict['CPU_matlab'] = 0.0
             self.statusDict['MEM_matlab'] = 0.0
             
@@ -232,9 +243,12 @@ class Server:
     def dealWithFailedSession(self, name):
         self.statusDict['msg'] +='{} failed on {}\n'\
                     .format(name, datetime.now())
-        self.statusDict['currentSessions'].remove(name)
-        del self.currentSessions[name]
-#        del self.processes[name]
+        if name in self.statusDict['currentSessions']:
+            self.statusDict['currentSessions'].remove(name)
+        if name in self.currentSessions:
+            del self.currentSessions[name]
+        if name in self.processes:
+            del self.processes[name]
         
     def workloadBalance(self, sessions):
         if self.statusDict['CPU_total'] > self.CPU_max: return None
@@ -260,6 +274,22 @@ class Server:
                 p.start()
                 self.processes[k] = p
 
+    def getFinishedSessionKey(self, session):
+        taskList = self.getTaskList()
+        for task in taskList:
+            path = os.path.join(self.newTaskFolder, task)
+            df = readJSON_to_df(path)
+            df = df.sort_values('Num')
+            temp = list(zip(['Task']*len(df),\
+                    df['Num'].apply(str) , df['UUID']))
+            index = ['-'.join(t) for t in temp]
+            if session in index:
+                timeStr = self.getTimeStr(task)
+                key = timeStr+'_'+session
+                return key
+        return None
+                
+    
     def updateSessionsStatus(self):
         for k, v in self.currentSessions.items():
             # check process status
@@ -275,10 +305,13 @@ class Server:
             if k not in self.statusDict['currentSessions']:
                 self.statusDict['currentSessions'].append(k)
             if v != 1: # remove session
-                self.statusDict['finishedSessions'][k] = v
+                key = self.getFinishedSessionKey(k)
+                if key:
+                    self.statusDict['finishedSessions'][key] = v
+                if k in self.processes:
+                    del self.processes[k]
                 self.statusDict['currentSessions'].remove(k)
                 del self.currentSessions[k]
-                del self.processes[k]
         self.removeFinishedSessionsStatus()
     
     def removeFinishedSessionsStatus(self):

@@ -40,20 +40,22 @@ def getTimeStr(task):
 def getDuplicatedItems(lst1, lst2):
     return set(lst1) & set(lst2)
 
-def isCPUorMEM(input):
-    return any(x in input for x in ['CPU', 'MEM'])
+def isCPUorMEMorDISK(input):
+    return any(x in input for x in ['CPU', 'MEM', 'DISK'])
 
 
 class Monitor():
     def __init__(self, master):
         self.master = master
-        self.columns_server = ['name', 'CPU_max', 'MEM_max', 'CPU_total', 'MEM_total', 'num_matlab',
-                        'CPU_matlab', 'MEM_matlab', 'updated_time']
+        self.columns_server = ['name', 'CPU_max', 'MEM_max', 'CPU_total',
+                           'MEM_total', 'DISK_total', 'num_assigned', 
+                           'num_running','num_finished', 'CPU_matlab',
+                           'MEM_matlab',  'updated_time']
         self.columns_task = ['name', 'num_task', 'num_running', 'num_finished',
                         'updated_time']
         pass
     
-    def updateProgress(self, numMins=5):
+    def printProgress(self, numMins=5):
         clearConsole()
         print("Updated on {} and will fresh in {} mins".\
               format(parseTime(datetime.now()), numMins))
@@ -97,58 +99,31 @@ class Monitor():
             data = [server[k] for k in self.columns_server]
             df = df.append(pd.DataFrame(data=[data], columns=self.columns_server))
         df['updated_time'] = df['updated_time'].apply(parseTime)
-        
-        taskList = self.master.getTaskList()
-        num_assigned_dict = OrderedDict()
-        for task in taskList:
-            task_path = os.path.join(self.master.newTaskFolder, task)
-            df_temp = readJSON_to_df(task_path)
-            
-            for server in self.master.serverList:
-                num_assigned = len(df_temp[df_temp['HostName'] == server['name']])
-                if server['name'] in num_assigned_dict:
-                    num_assigned_dict[server['name']] += num_assigned
-                else:
-                    num_assigned_dict[server['name']] = num_assigned
-        idx_num_matlab = list(df.columns).index('num_matlab')
-        df.insert(idx_num_matlab, 'num_assigned',
-                  list(num_assigned_dict.values()))
-        columns_new = [ a+'(%)' if isCPUorMEM(a) else a for a in df.columns]
-        columns_new[idx_num_matlab+1] = 'num_running'
+        df = df.fillna(0)
+        columns_new = [ a+'(%)' if isCPUorMEMorDISK(a) else a for a in df.columns]
         df.columns = columns_new
-        numColumns = len(df.columns)
-        sep_idx = 6
-        
-        df1 = df.iloc[:, range(sep_idx)]
-        df2 = df.iloc[:, [0]+ list(range(sep_idx, numColumns))]
-        columns_df2 = list(df2.columns)
-        columns_df2[0] = ''
-        df2.columns = columns_df2
-        part1 = [list(df1.columns)] + df1.values.tolist()
-        part2 = [list(df2.columns)] + df2.values.tolist()
-        for p in part2:
-            p.insert(1, '')
-        whole = part1 + part2
-        table = tb.tabulate(whole,  tablefmt="grid")
+        df_target = df.loc[:, columns_new[1:]]
+        col_head = [columns_new[0]] + df.loc[:, columns_new[0]].values.tolist()
+        numColumns = len(df_target.columns)
+        numGroups = 2
+        numInterval = round(numColumns/numGroups)
+        parts = []
+        sep_idxs = list(range(0, numColumns, numInterval))
+        for i in range(numGroups):
+            if i != numGroups-1:
+                target_idxs = list(range(sep_idxs[i], sep_idxs[i+1]))
+            else:
+                target_idxs = list(range(sep_idxs[-1], numColumns))
+            df_temp = df_target.iloc[:, target_idxs] 
+            part = [list(df_temp.columns)] + df_temp.values.tolist()
+            if len(df_temp.columns) < numInterval:
+                for p in part:
+                    p.insert(0, '')
+            for j in range(len(part)):
+                part[j] = [col_head[j]] + part[j]
+            parts +=part
+        table = tb.tabulate(parts,  tablefmt="grid")
         print(table)
-#        printTable(whole)
-#        printTable(df2)
-#        return df
-
 
 if __name__ == '__main__':
-    from PyTaskDistributor.core.master import Master
-    config_path= os.path.join(os.getcwd(), 'config.txt')
-    config = readConfig(config_path)
-    hostname = getHostName()
-    setup = config[hostname]        
-    master = Master(setup)
-    master.updateServerList()
-    monitor = Monitor(master)
-    df = monitor.updateProgress()
-#msg = printTable(df)
-#df = pd.DataFrame(columns=['A'])
-#df = pd.concat([pd.DataFrame(data=[[i, 1]], columns=['A', 'B']) for i in range(5)],
-#          ignore_index=True)
-
-
+    pass

@@ -21,7 +21,7 @@ import math
 import random
 import uuid
 import traceback
-import time
+#import time
 import shutil
 
 def getUUID(origin):
@@ -53,7 +53,7 @@ class Master:
             self.updateServerList()
             self.updateTaskStatus()
             self.workloadBalance()
-            self.monitor.updateProgress(numMin)
+            self.printProgress(numMin)
             self.printMsgs()
             sleepMins(numMin)
             needAssistance = False
@@ -67,6 +67,9 @@ class Master:
             needAssistance = True
         return needAssistance
      
+    def printProgress(self, numMin=5):
+        self.monitor.printProgress(numMin)
+        
     def printMsgs(self):
         for msg in self.msgs:
             print(msg)
@@ -88,17 +91,25 @@ class Master:
                       if f.endswith(".json")]
         self.serverList = []
         for s in serverList:
-            s_path = os.path.join(self.serverFolder, s)
-            s_json = readJSON_to_dict(s_path)
-            s_time = dateutil.parser.parse(s_json['updated_time'])
-            diff_min = (datetime.now() - s_time).seconds/60
-            if diff_min < timeout_mins:#only use if updated within N mins
-                self.serverList.append(s_json)
+            try:
+                s_path = os.path.join(self.serverFolder, s)
+                s_json = readJSON_to_dict(s_path)
+                s_time = dateutil.parser.parse(s_json['updated_time'])
+                diff_min = (datetime.now() - s_time).seconds/60
+                if diff_min < timeout_mins:#only use if updated within N mins
+                    self.serverList.append(s_json)
+            except:
+                print("Failed to read status of {}".format(s))
+                pass
                 
     def workloadBalance(self):
         taskList = self.getTaskList()
         if len(taskList) == 0:
             return
+        for task in taskList:
+            if 'sync-conflict' in task:#conflict file from Syncthing
+                task_path = os.path.join(self.newTaskFolder, task)
+                os.unlink(task_path)
         task = random.choice(taskList)#Only balance one task per time
         task_path = os.path.join(self.newTaskFolder, task)
         df = readJSON_to_df(task_path)
@@ -112,7 +123,7 @@ class Master:
             skipFlag = False
             num_target = 0
             #assigned sessions but not running
-            if len(server['currentSessions']) > server['num_matlab']:
+            if len(server['currentSessions']) > server['num_running']:
                 skipFlag = True
             df_assigned = df[(df['HostName']==server['name'])&\
                              (df['Finished']!=1) ]
@@ -160,6 +171,12 @@ class Master:
                 v['HostName'] = server['name']
             finishedSessions.update(tempDict)
         return finishedSessions
+    
+    def getTimeStr(self, task):
+        markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
+        dotLocation = [i for i, ltr in enumerate(task) if ltr == '.']
+        timeStr = task[markLocation[0]+1:dotLocation[-1]]
+        return timeStr
     
     def updateTaskStatus(self):
         taskList = self.getTaskList()

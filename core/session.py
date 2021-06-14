@@ -85,7 +85,7 @@ class Session:
         # delivery everything excluding mat file
         self.deliveryTask(targetFolder)
         shutil.rmtree(sourceFolder)
-        os.chdir(self.deglobfaultFolder)
+        os.chdir(self.defaultFolder)
         return output
   
     def main(self):

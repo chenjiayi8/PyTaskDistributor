@@ -16,12 +16,13 @@ config_path= os.path.join(os.getcwd(), 'config.txt')
 config = readConfig(config_path)
 hostname = getHostName()
 
-#hostname = 'cmmb01'
-setup = config[hostname]
+#hostname = 'cmmb01';
 #setup['order'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 #setup['delivery'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 #setup['factory'] = '/home/frank/LocalWorkFolder/TranReNu/MC3DVersion3.3_Git/'        
 obj = Master(setup)
+obj.updateServerList(120)
+obj.printProgress()
 #obj.main()
 #obj.generateTasks()
 #obj.updateServerList()
