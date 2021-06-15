@@ -7,7 +7,8 @@ Created on Fri Jun  4 13:21:08 2021
 """
 
 from PyTaskDistributor.util.others import (
-        sleepMins, getProcessList, getLatestFileInFolder, getProcessCPU)
+        sleepMins, getProcessList, getLatestFileInFolder,
+        getProcessCPU, getNumProcessor)
 from PyTaskDistributor.util.json import (
          writeJSON_from_dict, readJSON_to_df, readJSON_to_dict)
 from PyTaskDistributor.core.session import Session
@@ -75,6 +76,60 @@ class Server:
         self.recordStatus()
         self.writeServerStatus()
     
+    def main(self):
+        numMin = random.randint(2,4)
+        interval_seconds = 30
+        interval_mins = interval_seconds/60
+        num_interval = round(numMin*60/interval_seconds)
+        try:
+            self.onInterval()
+            nowTimeStr = datetime.strftime(\
+                               datetime.now(),  "%H:%M:%S %d/%m/%Y")
+            msg = "{}: Sleeping for {} mins".format(nowTimeStr, numMin)
+            print(msg)
+#            print("\r", msg, end='')
+            
+            for i in range(num_interval):
+                self.recordStatus()
+                sleepMins(interval_mins)
+            self.writeServerStatus()
+            needAssistance = False
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            print ("Need assisstance for unexpected error:\n {}"\
+                   .format(sys.exc_info()))
+            traceBackObj = sys.exc_info()[2]
+            traceback.print_tb(traceBackObj)
+            needAssistance = True
+        return needAssistance
+    
+    
+    def onInterval(self):
+        taskList = self.getTaskList()
+        cleanTask = self.hostName+'_clean.json'
+        # clean previous task results
+        if cleanTask in taskList:
+            self.cleanUnfinishedSessions()
+            taskList.remove(cleanTask)
+            os.unlink(os.path.join(self.newTaskFolder, cleanTask))
+        for task in taskList:
+            if '_clean.json' in task:
+                continue #skip clean task for another server
+            # announce the start of simulation
+            print("Working on {}".format(task))
+            self.updateFolderPaths(task)#paths for output
+            self.onStartTask()
+            df = self.getTaskTable(task)# check new task
+            df = self.removeFinishedInputs(df)
+            sessions = self.createSessions(df)
+            sessions = self.workloadBalance(sessions)
+            self.runSessions(sessions)
+        
+        # wait for the starting of simulation
+        sleepMins(1)
+        self.updateSessionsStatus()
+    
     def onStartTask(self):
         if int(self.statusDict['num_running']) == 0:
             self.prepareFactory()
@@ -82,6 +137,10 @@ class Server:
         if sessions:
             self.markFinishedSession(sessions)
             self.writeServerStatus()
+        #remove finished sessions from current sessions
+        self.removeFinishedSessions()
+            
+        
     
     def writeServerStatus(self):
         #calculate the average CPU/MEM percents and write
@@ -121,9 +180,10 @@ class Server:
             df_matlab = df_matlab.reset_index(drop=True)
             #measure the CPU usage of matlab process
             df_matlab['CPU'] = df_matlab['pid'].apply(getProcessCPU)
+            numProcessor = getNumProcessor()
             self.statusDict['num_running'] = len(df_matlab)
             self.statusDict['CPU_matlab'] = \
-                        round(sum(np.array(df_matlab['CPU'])/100), 2)
+                        round(df_matlab['CPU'].sum()/numProcessor, 2)
             self.statusDict['MEM_matlab'] = round(sum(df_matlab['Mem']), 2)
         else:
             self.statusDict['num_running'] = 0
@@ -300,6 +360,16 @@ class Server:
         return None
                 
     
+    def removeFinishedSessions(self):
+        sessions = list(self.statusDict['finishedSessions'].keys())
+        for session in  sessions:
+                underlineLocs = [i for i, ltr in enumerate(session) if ltr == '_']
+                key = session[underlineLocs[1]+1:]
+                if key in self.statusDict['currentSessions']:
+                    self.statusDict['currentSessions'].remove(key)
+                if key in self.currentSessions:
+                    del  self.currentSessions[key]
+    
     def updateSessionsStatus(self):
         for k, v in self.currentSessions.items():
             # check process status
@@ -322,9 +392,9 @@ class Server:
                     del self.processes[k]
                 self.statusDict['currentSessions'].remove(k)
                 del self.currentSessions[k]
-        self.removeFinishedSessionsStatus()
+        self.removeFinishedTask()
     
-    def removeFinishedSessionsStatus(self):
+    def removeFinishedTask(self):
         taskList = self.getTaskList(folder=self.finishedTaskFolder)
         sessions = list(self.statusDict['finishedSessions'].keys())
         for task in taskList:
@@ -394,58 +464,8 @@ class Server:
         df2 = df[df['HostName']==self.hostName]
         return df2
     
-    def onInterval(self):
-        taskList = self.getTaskList()
-        cleanTask = self.hostName+'_clean.json'
-        # clean previous task results
-        if cleanTask in taskList:
-            self.cleanUnfinishedSessions()
-            taskList.remove(cleanTask)
-            os.unlink(os.path.join(self.newTaskFolder, cleanTask))
-        for task in taskList:
-            if '_clean.json' in task:
-                continue #skip clean task for another server
-            # announce the start of simulation
-            print("Working on {}".format(task))
-            self.updateFolderPaths(task)#paths for output
-            self.onStartTask()
-            df = self.getTaskTable(task)# check new task
-            df = self.removeFinishedInputs(df)
-            sessions = self.createSessions(df)
-            sessions = self.workloadBalance(sessions)
-            self.runSessions(sessions)
-        
-        # wait for the starting of simulation
-        sleepMins(1)
-        self.updateSessionsStatus()
+
     
-    def main(self):
-        numMin = random.randint(2,4)
-        interval_seconds = 30
-        interval_mins = interval_seconds/60
-        num_interval = round(numMin*60/interval_seconds)
-        try:
-            self.onInterval()
-            nowTimeStr = datetime.strftime(\
-                               datetime.now(),  "%H:%M:%S %d/%m/%Y")
-            msg = "{}: Sleeping for {} mins".format(nowTimeStr, numMin)
-            print(msg)
-#            print("\r", msg, end='')
-            
-            for i in range(num_interval):
-                self.recordStatus()
-                sleepMins(interval_mins)
-            self.writeServerStatus()
-            needAssistance = False
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except:
-            print ("Need assisstance for unexpected error:\n {}"\
-                   .format(sys.exc_info()))
-            traceBackObj = sys.exc_info()[2]
-            traceback.print_tb(traceBackObj)
-            needAssistance = True
-        return needAssistance
 
 if __name__ == '__main__':
     pass

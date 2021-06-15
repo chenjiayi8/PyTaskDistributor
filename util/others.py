@@ -81,6 +81,8 @@ def getProcessList():
             pass
     return pd.DataFrame(data=data, columns=columns)
 
+def getNumProcessor():
+    return psutil.cpu_count()
 
 def getProcessCPU(pid):
     try:

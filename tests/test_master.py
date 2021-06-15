@@ -15,7 +15,7 @@ config_path= os.path.join(os.getcwd(), 'config.txt')
 
 config = readConfig(config_path)
 hostname = getHostName()
-
+setup = config[hostname] 
 #hostname = 'cmmb01';
 #setup['order'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 #setup['delivery'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
