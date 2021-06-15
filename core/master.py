@@ -122,34 +122,48 @@ class Master:
             # check if assigned sessions are running
             skipFlag = False
             num_target = 0
+            msg_cause = ''
+            df_temp = df[df['HostName']=='']
+            #No more sessions
+            if len(df_temp) == 0:
+                skipFlag = True
+                msg_cause += 'All sessions are assigned\n'
             #assigned sessions but not running
             if len(server['currentSessions']) > server['num_running']:
                 skipFlag = True
+                msg_cause += 'Assigned sessions are not running\n'
             df_assigned = df[(df['HostName']==server['name'])&\
                              (df['Finished']!=1) ]
+            #assigned sessions but not received
             for idx in df_assigned.index:
                 if idx not in server['currentSessions']:
-                    #assigned session is not running
                     skipFlag = True
-                    continue
-            if skipFlag:
-                continue# Do not assign new session
-            if int(server['num_matlab']) == 0:
+                    msg_cause += 'Assigned sessions are not received\n'
+        
+            if int(server['num_running']) == 0:
                 num_target = 1
             else:
                 cpu_avaiable = server['CPU_max'] - server['CPU_total']
-                cpu_per_task = server['CPU_matlab'] / server['num_matlab']
+                cpu_per_task = server['CPU_matlab'] / server['num_running']
                 num_cpu = math.floor(cpu_avaiable/cpu_per_task)
                 mem_avaiable = server['MEM_max'] - server['MEM_total']
-                mem_per_task = server['MEM_matlab'] / server['num_matlab']
+                mem_per_task = server['MEM_matlab'] / server['num_running']
                 num_mem = math.floor(mem_avaiable/mem_per_task)
                 num_target = min([num_cpu, num_mem])
                 if num_target > 2: #Max add 2 per cyce 
                     num_target = 2
                 if num_target < 0:
                     num_target = 0
-            df_temp = df[df['HostName']=='']
-            if len(df_temp) > 0:#still have some tasks to do
+            # CPU/MEM limit
+            if num_target == 0:
+                skipFlag = True
+                msg_cause += 'reaching CPU/MEM limit'
+                
+            # Do not assign new session
+            if skipFlag: 
+                msg = "Assign {} new sessions for Server {} because: {}"\
+                        .format(num_target, server['name'], msg_cause)
+            else:# assign new session
                 intialTaskIdx = list(df_temp.index)
                 random.shuffle(intialTaskIdx)
                 if len(intialTaskIdx) > num_target:
@@ -158,8 +172,9 @@ class Master:
                     num_target = len(intialTaskIdx)
                 for i in range(len(intialTaskIdx)):
                     df.loc[intialTaskIdx[i], 'HostName'] = server['name']
-            msg = "Assign {} new sessions for Server {}"\
-                        .format(num_target, server['name'])
+                msg = "Assign {} new sessions for Server {}"\
+                            .format(num_target, server['name'])
+            # record msg
             self.msgs.append(msg)
         writeJSON_from_df(task_path, df)
     

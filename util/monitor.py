@@ -51,8 +51,8 @@ class Monitor():
                            'MEM_total', 'DISK_total', 'num_assigned', 
                            'num_running','num_finished', 'CPU_matlab',
                            'MEM_matlab',  'updated_time']
-        self.columns_task = ['name', 'num_task', 'num_running', 'num_finished',
-                        'updated_time']
+        self.columns_task = ['name', 'num_task', 'num_assigned', 
+                             'num_finished','updated_time']
         pass
     
     def printProgress(self, numMins=5):
@@ -66,10 +66,10 @@ class Monitor():
         print("Task:")
         df_tasks = pd.DataFrame(columns=self.columns_task)
         taskList = self.master.getTaskList()
-        runningSessions = []
+        assignedSessions = []
         finishedSessions = []
         for server in self.master.serverList:
-            runningSessions += server['currentSessions']
+            assignedSessions += server['currentSessions']
             finishedSessions += server['finishedSessions'].keys()
         for task in taskList:
             timeStr = getTimeStr(task)
@@ -80,11 +80,11 @@ class Monitor():
             index1 = ['-'.join(t) for t in temp]
             index2 = [timeStr+'_'+'-'.join(t) for t in temp]
             num_task = len(df)
-            num_running = len(getDuplicatedItems(runningSessions, index1))
+            num_assigned = len(getDuplicatedItems(assignedSessions, index1))
             num_finished = len(getDuplicatedItems(finishedSessions, index2))
             updated_time = datetime.fromtimestamp(os.path.getmtime(task_path))
             updated_time_str = parseTime(updated_time)
-            data = [task[:-5], num_task, num_running,
+            data = [task[:-5], num_task, num_assigned,
                     num_finished, updated_time_str]
             df_tasks = df_tasks.append(pd.DataFrame(data=[data], columns=self.columns_task))
         printTable(df_tasks)
