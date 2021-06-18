@@ -133,7 +133,7 @@ class Master:
                 skipFlag = True
                 msg_cause += 'Assigned sessions are not running\n'
             df_assigned = df[(df['HostName']==server['name'])&\
-                             (df['Finished']!=1) ]
+                             (df['Finished']!=1)]
             #assigned sessions but not received
             for idx in df_assigned.index:
                 if idx not in server['currentSessions']:
@@ -161,8 +161,8 @@ class Master:
                 
             # Do not assign new session
             if skipFlag: 
-                msg = "Assign {} new sessions for Server {} because: {}"\
-                        .format(num_target, server['name'], msg_cause)
+                msg = "Assign 0 new sessions for Server {} because: {}"\
+                        .format(server['name'], msg_cause)
             else:# assign new session
                 intialTaskIdx = list(df_temp.index)
                 random.shuffle(intialTaskIdx)
