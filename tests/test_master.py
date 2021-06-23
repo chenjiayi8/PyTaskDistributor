@@ -21,8 +21,9 @@ setup = config[hostname]
 #setup['delivery'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 #setup['factory'] = '/home/frank/LocalWorkFolder/TranReNu/MC3DVersion3.3_Git/'        
 obj = Master(setup)
-obj.updateServerList(120)
-obj.printProgress()
+obj.updateServerList(10000)
+#obj.removeFinishedTask()
+#obj.printProgress()
 #obj.main()
 #obj.generateTasks()
 #obj.updateServerList()

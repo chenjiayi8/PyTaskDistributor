@@ -32,9 +32,9 @@ class Session:
 
     def runMatlabUnfinishedTask(self):
         time.sleep(random.randint(1, 30))
-#        print("Creating matlab engine for {}".format(input))
+        print("Creating matlab engine for old task {}".format(self.name))
         eng = matlab.engine.start_matlab()
-#        print("Have matlab engine for {}".format(input))
+        print("Creating matlab engine for old task {} done".format(self.name))
         output, folderName = eng.MatlabToPyRunUnfinishedTasks(self.input, nargout=2)
         return output, folderName
     
@@ -44,9 +44,9 @@ class Session:
         uuid = self.input[-1]
         inputs = [float(i) for i in self.input[:-1]] 
         inputs.append(uuid)
-#        print("Creating matlab engine for {}".format(input))
+        print("Creating matlab engine for new task {}".format(self.name))
         eng    = matlab.engine.start_matlab()
-#        print("Have matlab engine for {}".format(input))
+        print("Creating matlab engine for new task {} done".format(self.name))
         output, folderName = eng.MatlabToPyRunNewTasks(inputs, nargout=2)
         return output, folderName
     
@@ -81,7 +81,10 @@ class Session:
         sourceFolder = os.path.join(self.factoryFolder, 'Output', folderName)
         matFolder = os.path.join(sourceFolder, 'data')
         matPath  = getLatestFileInFolder(matFolder)
-        output['Comments'] = os.path.basename(matPath)
+        if 'err_msg' in output:
+            output['Comments'] = output['err_msg']
+        else:
+            output['Comments'] = os.path.basename(matPath)
         targetFolder = os.path.join(self.matFolderPath, folderName)
         #copy simulation results to task result folder
         copy_tree(sourceFolder, targetFolder)

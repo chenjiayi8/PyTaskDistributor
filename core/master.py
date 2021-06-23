@@ -52,6 +52,7 @@ class Master:
                 self.generateTasks()
             self.updateServerList()
             self.updateTaskStatus()
+            self.removeFinishedTask()
             self.workloadBalance()
             self.printProgress(numMin)
             self.printMsgs()
@@ -137,32 +138,35 @@ class Master:
             #assigned sessions but not received
             for idx in df_assigned.index:
                 if idx not in server['currentSessions']:
+                    if not skipFlag:
+                        msg_cause += '\n'
                     skipFlag = True
-                    msg_cause += 'Assigned sessions are not received\n'
+                    msg_cause += 'Assigned session {} are not received\n'.format(idx)
         
-            if int(server['num_running']) == 0:
-                num_target = 1
-            else:
-                cpu_avaiable = server['CPU_max'] - server['CPU_total']
-                cpu_per_task = server['CPU_matlab'] / server['num_running']
-                num_cpu = math.floor(cpu_avaiable/cpu_per_task)
-                mem_avaiable = server['MEM_max'] - server['MEM_total']
-                mem_per_task = server['MEM_matlab'] / server['num_running']
-                num_mem = math.floor(mem_avaiable/mem_per_task)
-                num_target = min([num_cpu, num_mem])
-                if num_target > 2: #Max add 2 per cyce 
-                    num_target = 2
-                if num_target < 0:
-                    num_target = 0
-            # CPU/MEM limit
-            if num_target == 0:
-                skipFlag = True
-                msg_cause += 'reaching CPU/MEM limit'
+            if not skipFlag:
+                if int(server['num_running']) == 0:
+                    num_target = 1
+                else:
+                    cpu_avaiable = server['CPU_max'] - server['CPU_total']
+                    cpu_per_task = server['CPU_matlab'] / server['num_running']
+                    num_cpu = math.floor(cpu_avaiable/cpu_per_task)
+                    mem_avaiable = server['MEM_max'] - server['MEM_total']
+                    mem_per_task = server['MEM_matlab'] / server['num_running']
+                    num_mem = math.floor(mem_avaiable/mem_per_task)
+                    num_target = min([num_cpu, num_mem])
+                    if num_target > 2: #Max add 2 per cyce 
+                        num_target = 2
+                    if num_target < 0:
+                        num_target = 0
+                # CPU/MEM limit
+                if num_target == 0:
+                    skipFlag = True
+                    msg_cause += 'reaching CPU/MEM limit'
                 
             # Do not assign new session
             if skipFlag: 
-                msg = "Assign 0 new sessions for Server {} because: {}"\
-                        .format(server['name'], msg_cause)
+                msg = "Assign 0 new sessions of {} for Server {} because: {}"\
+                        .format(task, server['name'], msg_cause)
             else:# assign new session
                 intialTaskIdx = list(df_temp.index)
                 random.shuffle(intialTaskIdx)
@@ -172,8 +176,8 @@ class Master:
                     num_target = len(intialTaskIdx)
                 for i in range(len(intialTaskIdx)):
                     df.loc[intialTaskIdx[i], 'HostName'] = server['name']
-                msg = "Assign {} new sessions for Server {}"\
-                            .format(num_target, server['name'])
+                msg = "Assign {} new sessions of {} for Server {}"\
+                            .format(num_target, task, server['name'])
             # record msg
             self.msgs.append(msg)
         writeJSON_from_df(task_path, df)
@@ -193,6 +197,49 @@ class Master:
         timeStr = task[markLocation[0]+1:dotLocation[-1]]
         return timeStr
     
+    def readTask(self, path):
+        df = readJSON_to_df(path)
+        df = df.sort_values('Num')
+        temp = list(zip(['Task']*len(df),\
+                df['Num'].apply(str) , df['UUID']))
+        index = ['-'.join(t) for t in temp]
+        df.index = index
+        df = df.fillna('')
+        return df
+    
+    def markTaskDF(self, task, df, finishedSessions):
+        modified_flag = False
+        for key in finishedSessions.keys():
+            underlineLocs = [i for i, ltr in enumerate(key) if ltr == '_']
+            taskTimeStr = key[:underlineLocs[1]]
+            index = key[underlineLocs[1]+1:]
+            if taskTimeStr in task and index in df.index:
+                #only modify when necessary
+                if df.loc[index, 'Finished'] != 1:
+                    values = finishedSessions[key]
+                    modified_flag = True
+                    for k, v in values.items():
+                        df.loc[index, k] = v
+        return modified_flag
+    
+    def removeFinishedTask(self):
+        taskList = self.getTaskList(folder=self.finishedTaskFolder)
+        if len(taskList) == 0:#skip if no new finished task
+            return
+        finishedSessions = self.getFinishedSessions()
+        for task in taskList:
+            path = os.path.join(self.finishedTaskFolder, task)
+            path_xlsx = os.path.join(self.mainFolder,\
+                                     'Output', task[:-5]+'.xlsx')
+            df = self.readTask(path)
+            modified_flag = self.markTaskDF(task, df, finishedSessions)
+            if modified_flag:
+                writeJSON_from_df(path, df)
+                updateXlsxFile(path_xlsx, df)
+            if all(df['Finished'] == 1):# rename to json.bak 
+                path_done = os.path.join(self.finishedTaskFolder, task+'.bak')
+                shutil.move(path, path_done)
+        
     def updateTaskStatus(self):
         taskList = self.getTaskList()
         finishedSessions = self.getFinishedSessions()
@@ -200,25 +247,8 @@ class Master:
             path = os.path.join(self.newTaskFolder, task)
             path_xlsx = os.path.join(self.mainFolder,\
                                      'Output', task[:-5]+'.xlsx')
-            df = readJSON_to_df(path)
-            df = df.sort_values('Num')
-            temp = list(zip(['Task']*len(df),\
-                    df['Num'].apply(str) , df['UUID']))
-            index = ['-'.join(t) for t in temp]
-            df.index = index
-            df = df.fillna('')
-            modified_flag = False
-            for key in finishedSessions.keys():
-                underlineLocs = [i for i, ltr in enumerate(key) if ltr == '_']
-                taskTimeStr = key[:underlineLocs[1]]
-                index = key[underlineLocs[1]+1:]
-                if taskTimeStr in task and index in df.index:
-                    #only modify when necessary
-                    if df.loc[index, 'Finished'] != 1:
-                        values = finishedSessions[key]
-                        modified_flag = True
-                        for k, v in values.items():
-                            df.loc[index, k] = v
+            df = self.readTask(path)
+            modified_flag = self.markTaskDF(task, df, finishedSessions)
             if modified_flag:
                 writeJSON_from_df(path, df)
                 updateXlsxFile(path_xlsx, df)

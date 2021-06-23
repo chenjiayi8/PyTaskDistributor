@@ -8,13 +8,14 @@ Created on Fri Jun  4 13:21:08 2021
 
 from PyTaskDistributor.util.others import (
         sleepMins, getProcessList, getLatestFileInFolder,
-        getProcessCPU, getNumProcessor)
+        getProcessCPU, getNumProcessor, getFileSuffix)
 from PyTaskDistributor.util.json import (
          writeJSON_from_dict, readJSON_to_df, readJSON_to_dict)
 from PyTaskDistributor.core.session import Session
 from multiprocessing import Process, Manager
 import os
 import sys
+from glob import glob
 #import time
 from datetime import datetime
 import numpy as np
@@ -24,6 +25,7 @@ from dirsync import sync
 import random
 import traceback
 from collections import OrderedDict
+from distutils.dir_util import copy_tree
 import psutil
 
 class Server:
@@ -69,7 +71,7 @@ class Server:
             statusDict['user'] = self.userName
             statusDict['CPU_max'] = self.CPU_max
             statusDict['MEM_max'] = self.MEM_max
-            statusDict['msg'] = ''
+            statusDict['msg'] = []
             statusDict['currentSessions'] = []
             statusDict['finishedSessions'] = OrderedDict()
             self.statusDict = statusDict
@@ -110,13 +112,14 @@ class Server:
         cleanTask = self.hostName+'_clean.json'
         # clean previous task results
         if cleanTask in taskList:
-            self.cleanUnfinishedSessions()
+            self.cleanUnfinishedTasks()
             taskList.remove(cleanTask)
             os.unlink(os.path.join(self.newTaskFolder, cleanTask))
-        for task in taskList:
-            if '_clean.json' in task:
-                continue #skip clean task for another server
-            # announce the start of simulation
+#        for task in taskList:
+        task = random.choice(taskList)#work on one task per cycle
+        if '_clean.json' not in task:
+#            continue #skip clean task for another server
+        # announce the start of simulation
             print("Working on {}".format(task))
             self.updateFolderPaths(task)#paths for output
             self.onStartTask()
@@ -129,6 +132,7 @@ class Server:
         # wait for the starting of simulation
         sleepMins(1)
         self.updateSessionsStatus()
+        self.removeFinishedTask()
     
     def onStartTask(self):
         if int(self.statusDict['num_running']) == 0:
@@ -238,9 +242,9 @@ class Server:
                         self.statusDict['finishedSessions'][key] = output
                         print("{} is marked".format(key))
                     else:
-                        msg = "Mark {} with err message {}\n"\
+                        msg = "Mark {} with err message {}"\
                         .format(targetMatPath, output['err_msg'])
-                        self.statusDict['msg'] += msg
+                        self.statusDict['msg'].append(msg)
                         print(msg)
                 os.chdir(self.defaultFolder) 
                 eng.exit()
@@ -311,8 +315,8 @@ class Server:
         return sessions
     
     def dealWithFailedSession(self, name):
-        self.statusDict['msg'] +='{} failed on {}\n'\
-                    .format(name, datetime.now())
+        self.statusDict['msg'].append('{} failed on {}'\
+                    .format(name, datetime.now()))
         if name in self.statusDict['currentSessions']:
             self.statusDict['currentSessions'].remove(name)
         if name in self.currentSessions:
@@ -363,7 +367,8 @@ class Server:
     def removeFinishedSessions(self):
         sessions = list(self.statusDict['finishedSessions'].keys())
         for session in  sessions:
-                underlineLocs = [i for i, ltr in enumerate(session) if ltr == '_']
+                underlineLocs = [i for i, \
+                                 ltr in enumerate(session) if ltr == '_']
                 key = session[underlineLocs[1]+1:]
                 if key in self.statusDict['currentSessions']:
                     self.statusDict['currentSessions'].remove(key)
@@ -374,13 +379,16 @@ class Server:
         for k, v in self.currentSessions.items():
             # check process status
             if k not in self.processes:
-                self.statusDict['msg'] += '{} is not in Processes\n'.format(k)
+                self.statusDict['msg'].append(\
+                       '{} is not in Processes'.format(k))
             else:
                 p = self.processes[k]
                 if not p.is_alive():
                     if p.exitcode != 0:
-                        self.statusDict['msg'] += \
-                        '{} is exited with exitcode {}\n'.format(k, p.exitcode)
+                        timeStr = datetime.now().isoformat()
+                        self.statusDict['msg'].append(\
+                    '{} {} is exited with exitcode {}\n'\
+                    .format(timeStr, k, p.exitcode))
             # add session
             if k not in self.statusDict['currentSessions']:
                 self.statusDict['currentSessions'].append(k)
@@ -392,17 +400,11 @@ class Server:
                     del self.processes[k]
                 self.statusDict['currentSessions'].remove(k)
                 del self.currentSessions[k]
-        self.removeFinishedTask()
     
     def removeFinishedTask(self):
         taskList = self.getTaskList(folder=self.finishedTaskFolder)
-        sessions = list(self.statusDict['finishedSessions'].keys())
         for task in taskList:
-            timeStr = self.getTimeStr(task)
-            for session in sessions:
-                if timeStr in session:
-#                    print("Removing finished session {}".format(session))
-                    del self.statusDict['finishedSessions'][session]
+            self.cleanTaskTrace(task)
     
     def getTimeStr(self, task):
         markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
@@ -424,7 +426,60 @@ class Server:
         if not os.path.isdir(folder):
             os.makedirs(folder)
     
-    def cleanUnfinishedSessions(self):
+    def postprocessTask(self, outputFolder, matFolderPath, session):
+        #copy folder
+        sourceFolder = os.path.join(outputFolder, session)
+        targetFolder = os.path.join(matFolderPath, session)
+        self.makedirs(targetFolder)
+        copy_tree(sourceFolder, targetFolder)
+        # delivery everything excluding mat file
+        self.deliveryTask(targetFolder)
+        #update finishedSessions will happen in onStartTask         
+        #clean session folder
+        self.cleanFolder(sourceFolder)
+        shutil.rmtree(sourceFolder)
+        pass
+    
+    def deliveryTask(self, targetFolder):
+        targetFolder = os.path.normpath(targetFolder)
+        basename = os.path.basename(targetFolder)
+        targetFolder += os.path.sep
+        itemList = glob(os.path.join(targetFolder,  '**'), recursive=True)
+        last_parts = [item.replace(targetFolder, '') for item in itemList]
+        for i in range(len(itemList)):
+            item = itemList[i]
+            path_new = os.path.join(self.deliveryFolderPath,\
+                                    basename, last_parts[i])
+            if os.path.isdir(item):
+                self.makedirs(path_new)
+            if os.path.isfile(item):
+                if getFileSuffix(item).lower() != '.mat':
+                    shutil.copyfile(item, path_new)
+    
+    
+    def cleanTaskTrace(self, task):
+        df = self.getTaskTable(task, self.finishedTaskFolder)
+        timeStr = self.getTimeStr(task)
+        unfinishedSessions, outputFolder = self.getUnfinishedSessions()
+        for session in unfinishedSessions:
+            key = timeStr + '_' + session
+            if session in df.index:
+                matFolderPath = os.path.join(\
+                                  self.factoryFolder, 'Output', timeStr)
+                self.postprocessTask(outputFolder, matFolderPath, session)
+                
+        for session in df.index:
+            key = timeStr + '_' + session
+            if session in self.currentSessions:
+                del self.currentSessions[session]
+            if session in self.statusDict['currentSessions']:
+                self.statusDict['currentSessions'].remove(session)
+            if key in self.statusDict['finishedSessions']:
+                del self.statusDict['finishedSessions'][key]
+            
+
+    
+    def cleanUnfinishedTasks(self):
         self.prepareFactory()
         unfinishedSessions, outputFolder = self.getUnfinishedSessions()
         for session in unfinishedSessions:
@@ -453,8 +508,10 @@ class Server:
         taskList = [f for f in os.listdir(folder) if f.endswith(".json")]
         return taskList
     
-    def getTaskTable(self, task):
-        input_path = os.path.join(self.newTaskFolder, task)
+    def getTaskTable(self, task, folder=''):
+        if len(folder) == 0:
+            folder = self.newTaskFolder
+        input_path = os.path.join(folder, task)
         df = readJSON_to_df(input_path)
         df = df.sort_values('Num')
         temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
