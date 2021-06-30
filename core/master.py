@@ -94,11 +94,14 @@ class Master:
         for s in serverList:
             try:
                 s_path = os.path.join(self.serverFolder, s)
-                s_json = readJSON_to_dict(s_path)
-                s_time = dateutil.parser.parse(s_json['updated_time'])
-                diff_min = (datetime.now() - s_time).seconds/60
-                if diff_min < timeout_mins:#only use if updated within N mins
-                    self.serverList.append(s_json)
+                if 'sync-conflict' in s:
+                    os.unlink(s_path)
+                else:
+                    s_json = readJSON_to_dict(s_path)
+                    s_time = dateutil.parser.parse(s_json['updated_time'])
+                    diff_min = (datetime.now() - s_time).seconds/60
+                    if diff_min < timeout_mins:#only use if updated within N mins
+                        self.serverList.append(s_json)
             except:
                 print("Failed to read status of {}".format(s))
                 pass
@@ -138,10 +141,13 @@ class Master:
             #assigned sessions but not received
             for idx in df_assigned.index:
                 if idx not in server['currentSessions']:
-                    if not skipFlag:
-                        msg_cause += '\n'
-                    skipFlag = True
-                    msg_cause += 'Assigned session {} are not received\n'.format(idx)
+                    finishedSessions = server['finishedSessions'].keys()
+                    idx_in_finishedSessions = [idx in s for s in finishedSessions]
+                    if not any(idx_in_finishedSessions):
+                        if not skipFlag:
+                            msg_cause += '\n'
+                        skipFlag = True
+                        msg_cause += 'Assigned session {} are not received\n'.format(idx)
         
             if not skipFlag:
                 if int(server['num_running']) == 0:

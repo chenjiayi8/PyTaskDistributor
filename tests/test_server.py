@@ -15,5 +15,5 @@ config_path= os.path.join(os.getcwd(), 'config.txt')
 config = readConfig(config_path)
 hostname = getHostName()
 setup = config[hostname]     
-obj = Server(setup)
+obj = Server(setup, debug=True)
 #obj.removeFinishedTask()

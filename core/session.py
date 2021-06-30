@@ -25,16 +25,72 @@ class Session:
         self.defaultFolder = server.defaultFolder
         self.mainFolder = server.mainFolder
         self.factoryFolder = server.factoryFolder
+        self.workingFolder = os.path.join(self.factoryFolder, 'Output', name)
         self.deliveryFolderPath = server.deliveryFolderPath
         self.matFolderPath = server.matFolderPath
         self.logFile = os.path.join(self.factoryFolder,\
                                     'Output', name, name+'.txt')
+        
+        self.initialise()
+        
+            
+    def initialise(self):
+        self.makedirs(self.workingFolder)
 
+    
+    def createMatlabEng(self, caller):
+        print("Creating matlab engine for {} {}".format(caller, self.name))
+        try:
+            eng = matlab.engine.start_matlab()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as e:
+            print ("Need assisstance for unexpected error:\n {}"\
+                   .format(sys.exc_info()))
+            traceBackObj = sys.exc_info()[2]
+            traceback.print_tb(traceBackObj)
+            with open(self.logFile, 'a') as f:
+                f.write(str(e)+'\n')
+                f.write(traceback.format_exc()+'\n')
+            self.server.dealWithFailedSession(self.name)
+        print("Creating matlab engine for {} {} done".format(caller,self.name))
+        return eng
+    
+    def getSimulationOutput(self):
+        os.chdir(self.factoryFolder)
+        eng = self.createMatlabEng('getSimulationOutput')
+        print("Loading {}".format(self.input))
+        [output, session_name]  = eng.postProcessHandlesV2(\
+                        self.input, nargout=2)
+        if output['Finished'] == 1.0:
+            output['Comments'] = os.path.basename(self.input)
+        else:
+            msg = "Mark {} with err message {}"\
+            .format(self.input, output['err_msg'])
+            print(msg)
+        eng.exit()
+        os.chdir(self.defaultFolder) 
+        return output
+    
+    def markFinishedSession(self):
+        try:
+            self.server.currentSessions[self.name] = 1
+            print("Marking on {}".format(self.name))
+            output = self.getSimulationOutput()
+            self.server.currentSessions[self.name] = output
+            print("Finishing marking {}".format(self.name))
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            print ("Need assisstance for unexpected error:\n {}"\
+                   .format(sys.exc_info()))
+            traceBackObj = sys.exc_info()[2]
+            traceback.print_tb(traceBackObj)
+            self.server.dealWithFailedSession(self.name)
+        
     def runMatlabUnfinishedTask(self):
         time.sleep(random.randint(1, 30))
-        print("Creating matlab engine for old task {}".format(self.name))
-        eng = matlab.engine.start_matlab()
-        print("Creating matlab engine for old task {} done".format(self.name))
+        eng = self.createMatlabEng('old task')
         output, folderName = eng.MatlabToPyRunUnfinishedTasks(self.input, nargout=2)
         return output, folderName
     
@@ -44,9 +100,7 @@ class Session:
         uuid = self.input[-1]
         inputs = [float(i) for i in self.input[:-1]] 
         inputs.append(uuid)
-        print("Creating matlab engine for new task {}".format(self.name))
-        eng    = matlab.engine.start_matlab()
-        print("Creating matlab engine for new task {} done".format(self.name))
+        eng = self.createMatlabEng('new task')
         output, folderName = eng.MatlabToPyRunNewTasks(inputs, nargout=2)
         return output, folderName
     
@@ -97,7 +151,7 @@ class Session:
     def main(self):
         try:
             self.server.currentSessions[self.name] = 1
-            print("Working on  {}".format(self.name))
+            print("Working on {}".format(self.name))
     #        print("Input is {}".format(self.input))
             output = self.runMatlabTask()
             self.server.currentSessions[self.name] = output
@@ -110,8 +164,8 @@ class Session:
             traceBackObj = sys.exc_info()[2]
             traceback.print_tb(traceBackObj)
             with open(self.logFile, 'a') as f:
-                f.write(str(e))
-                f.write(traceback.format_exc())
+                f.write(str(e)+'\n')
+                f.write(traceback.format_exc()+'\n')
             self.server.dealWithFailedSession(self.name)
 if __name__ == '__main__':
     pass

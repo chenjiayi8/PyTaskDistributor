@@ -20,7 +20,7 @@ from glob import glob
 from datetime import datetime
 import numpy as np
 import shutil
-import matlab.engine
+#import matlab.engine
 from dirsync import sync
 import random
 import traceback
@@ -29,8 +29,9 @@ from distutils.dir_util import copy_tree
 import psutil
 
 class Server:
-    def __init__(self, setup):
+    def __init__(self, setup, debug=False):
         self.setup = setup
+        self.debug = debug
         self.CPU_max = float(setup['CPU_max'])*100
         self.MEM_max = float(setup['MEM_max'])*100
         self.defaultFolder = os.getcwd()
@@ -116,18 +117,20 @@ class Server:
             taskList.remove(cleanTask)
             os.unlink(os.path.join(self.newTaskFolder, cleanTask))
 #        for task in taskList:
-        task = random.choice(taskList)#work on one task per cycle
-        if '_clean.json' not in task:
-#            continue #skip clean task for another server
-        # announce the start of simulation
-            print("Working on {}".format(task))
-            self.updateFolderPaths(task)#paths for output
-            self.onStartTask()
-            df = self.getTaskTable(task)# check new task
-            df = self.removeFinishedInputs(df)
-            sessions = self.createSessions(df)
-            sessions = self.workloadBalance(sessions)
-            self.runSessions(sessions)
+        if len(taskList) > 0:
+            task = random.choice(taskList)#work on one task per cycle
+            if '_clean.json' not in task:
+    #            continue #skip clean task for another server
+            # announce the start of simulation
+                print("Working on {}".format(task))
+                self.updateFolderPaths(task)#paths for output
+                self.onStartTask()
+                df = self.getTaskTable(task)# check new task
+                if df is not None:
+                    df = self.removeFinishedInputs(df)
+                    sessions = self.createSessions(df)
+                    sessions = self.workloadBalance(sessions)
+                    self.runSessions(sessions)
         
         # wait for the starting of simulation
         sleepMins(1)
@@ -153,7 +156,8 @@ class Server:
             averages = averages.round(2)
             for i in range(len(self.status_names)):
                 self.statusDict[self.status_names[i]] = averages[i]
-        writeJSON_from_dict(self.status_file, self.statusDict)
+        if not self.debug:# do not write status during debugging
+            writeJSON_from_dict(self.status_file, self.statusDict)
         self.status_record = np.zeros(len(self.status_names)+1, dtype=float)
     
     def recordStatus(self):
@@ -167,12 +171,16 @@ class Server:
         (total, used, free) = shutil.disk_usage(self.factoryFolder)
         return round(100*used/total, 2)
     
-    def updateServerStatus(self):
+    def getProcesses(self):
         df = getProcessList()
         df_user = df[df['User']==self.userName]
         #only count matlab process opened by Python
         df_matlab = df_user[df_user['Command'].apply(\
                             lambda x: 'matlab -mvminputpipe' in x.lower())]
+        return df, df_matlab
+    
+    def updateServerStatus(self):
+        df, df_matlab = self.getProcesses()
         self.statusDict['CPU_total'] = round(psutil.cpu_percent(interval=1), 2)
         self.statusDict['MEM_total'] = round(sum(df['Mem']), 2)
         self.statusDict['DISK_total'] = self.getDiskUsagePercent()
@@ -209,7 +217,9 @@ class Server:
     
     def markFinishedSession(self, sessions):
         if len(sessions) > 0:
+            targetSessions = []
             targetMatPaths = []
+            processes = []
             for session in sessions:
                 key = self.taskTimeStr+'_'+session
                 if key not in self.statusDict['finishedSessions']:
@@ -218,6 +228,7 @@ class Server:
                     matPath = getLatestFileInFolder(matFolder)
                     if matPath:
                         targetMatPaths.append(matPath)
+                        targetSessions.append(session)
                     else:
                         logFile = os.path.join(self.matFolderPath,\
                                                session, session+'.txt')
@@ -229,27 +240,14 @@ class Server:
                             msg['Comments'] = '|'.join(lines)
                             self.statusDict['finishedSessions'][key] = msg
                             
-            if len(targetMatPaths) > 0:
-                os.chdir(self.factoryFolder)
-                eng = matlab.engine.start_matlab()
-                for targetMatPath in targetMatPaths:
-                    print("Loading {}".format(targetMatPath))
-                    [output, session_name]  = eng.postProcessHandlesV2(\
-                                    targetMatPath, nargout=2)
-                    key = self.taskTimeStr+'_'+session_name
-                    if output['Finished'] == 1.0:
-                        output['Comments'] = os.path.basename(targetMatPath)
-                        self.statusDict['finishedSessions'][key] = output
-                        print("{} is marked".format(key))
-                    else:
-                        msg = "Mark {} with err message {}"\
-                        .format(targetMatPath, output['err_msg'])
-                        self.statusDict['msg'].append(msg)
-                        print(msg)
-                os.chdir(self.defaultFolder) 
-                eng.exit()
-                    
-    
+            for i in range(len(targetMatPaths)):
+                obj = Session(self, targetSessions[i], targetMatPaths[i])
+                p = Process(target=obj.markFinishedSession)
+                p.start()
+                processes.append(p)
+            for p in processes:
+                p.join()
+
     def getFinishedSessions(self):
         if os.path.isdir(self.matFolderPath):
             sessions = os.listdir(self.matFolderPath)
@@ -389,6 +387,9 @@ class Server:
                         self.statusDict['msg'].append(\
                     '{} {} is exited with exitcode {}\n'\
                     .format(timeStr, k, p.exitcode))
+                    p.terminate()
+                    del self.processes[k]
+                        
             # add session
             if k not in self.statusDict['currentSessions']:
                 self.statusDict['currentSessions'].append(k)
@@ -426,29 +427,31 @@ class Server:
         if not os.path.isdir(folder):
             os.makedirs(folder)
     
-    def postprocessTask(self, outputFolder, matFolderPath, session):
+    def postprocessTask(self, outputFolder, matFolderPath, timeStr, session):
         #copy folder
         sourceFolder = os.path.join(outputFolder, session)
         targetFolder = os.path.join(matFolderPath, session)
         self.makedirs(targetFolder)
         copy_tree(sourceFolder, targetFolder)
         # delivery everything excluding mat file
-        self.deliveryTask(targetFolder)
+        self.deliveryTask(targetFolder, timeStr)
         #update finishedSessions will happen in onStartTask         
         #clean session folder
         self.cleanFolder(sourceFolder)
         shutil.rmtree(sourceFolder)
         pass
     
-    def deliveryTask(self, targetFolder):
+    def deliveryTask(self, targetFolder, timeStr):
         targetFolder = os.path.normpath(targetFolder)
+        deliveryFolderPath = os.path.join(\
+                           self.deliveryFolder, 'Output', timeStr)
         basename = os.path.basename(targetFolder)
         targetFolder += os.path.sep
         itemList = glob(os.path.join(targetFolder,  '**'), recursive=True)
         last_parts = [item.replace(targetFolder, '') for item in itemList]
         for i in range(len(itemList)):
             item = itemList[i]
-            path_new = os.path.join(self.deliveryFolderPath,\
+            path_new = os.path.join(deliveryFolderPath,\
                                     basename, last_parts[i])
             if os.path.isdir(item):
                 self.makedirs(path_new)
@@ -466,7 +469,8 @@ class Server:
             if session in df.index:
                 matFolderPath = os.path.join(\
                                   self.factoryFolder, 'Output', timeStr)
-                self.postprocessTask(outputFolder, matFolderPath, session)
+                self.postprocessTask(outputFolder, matFolderPath,
+                                     timeStr, session)
                 
         for session in df.index:
             key = timeStr + '_' + session
@@ -512,14 +516,17 @@ class Server:
         if len(folder) == 0:
             folder = self.newTaskFolder
         input_path = os.path.join(folder, task)
-        df = readJSON_to_df(input_path)
-        df = df.sort_values('Num')
-        temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
-        index = ['-'.join(t) for t in temp]
-        df.index = index
-        df = df.fillna('')
-        df2 = df[df['HostName']==self.hostName]
-        return df2
+        if os.path.isfile(input_path):
+            df = readJSON_to_df(input_path)
+            df = df.sort_values('Num')
+            temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
+            index = ['-'.join(t) for t in temp]
+            df.index = index
+            df = df.fillna('')
+            df2 = df[df['HostName']==self.hostName]
+            return df2
+        else:
+            return None
     
 
     
