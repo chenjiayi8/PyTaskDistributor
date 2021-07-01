@@ -11,6 +11,8 @@ from PyTaskDistributor.util.others import (
         getProcessCPU, getNumProcessor, getFileSuffix)
 from PyTaskDistributor.util.json import (
          writeJSON_from_dict, readJSON_to_df, readJSON_to_dict)
+
+from PyTaskDistributor.util.extract import extractBetween
 from PyTaskDistributor.core.session import Session
 from multiprocessing import Process, Manager
 import os
@@ -136,6 +138,7 @@ class Server:
         sleepMins(1)
         self.updateSessionsStatus()
         self.removeFinishedTask()
+        self.manualRemoveTask()
     
     def onStartTask(self):
         if int(self.statusDict['num_running']) == 0:
@@ -325,10 +328,10 @@ class Server:
     def workloadBalance(self, sessions):
         if self.statusDict['CPU_total'] > self.CPU_max: return None
         if self.statusDict['MEM_total'] > self.MEM_max: return None
-        if len(sessions) > 3:
+        if len(sessions) > 4:
             keys = list(sessions.keys())
             random.shuffle(keys)
-            keys_new = keys[:3]
+            keys_new = keys[:4]
             sessions_new = {}
             for k in keys_new: sessions_new[k] = sessions[k]
             return sessions_new
@@ -404,13 +407,28 @@ class Server:
     
     def removeFinishedTask(self):
         taskList = self.getTaskList(folder=self.finishedTaskFolder)
+        taskList += self.getTaskList(folder=self.finishedTaskFolder,\
+                                   ending=".bak")
         for task in taskList:
             self.cleanTaskTrace(task)
     
+    def manualRemoveTask(self):
+        taskList = self.getTaskList(folder=self.finishedTaskFolder,\
+                                   ending=".delete")
+        for task in taskList:
+            timeStr = self.getTimeStr(task)
+            taskFolder = os.path.join(self.factoryFolder, 'Output', timeStr)
+            self.cleanTaskTrace(task)
+            self.cleanFolder(taskFolder)
+            
+        
+    
+    
     def getTimeStr(self, task):
-        markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
-        dotLocation = [i for i, ltr in enumerate(task) if ltr == '.']
-        timeStr = task[markLocation[0]+1:dotLocation[-1]]
+#        markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
+#        dotLocation = [i for i, ltr in enumerate(task) if ltr == '.']
+#        timeStr = task[markLocation[0]+1:dotLocation[-1]]
+        timeStr = extractBetween(task, 'TaskList_', '.json')[0]
         return timeStr
     
     def updateFolderPaths(self, task):
@@ -495,6 +513,7 @@ class Server:
     
     def cleanFolder(self, folerName):
         if os.path.isdir(folerName):
+            print("Cleanning folder {}".format(folerName))
             for filename in os.listdir(folerName):
                 file_path = os.path.join(folerName, filename)
                 if os.path.isfile(file_path) or os.path.islink(file_path):
@@ -506,10 +525,10 @@ class Server:
         sync(self.mainFolder, self.factoryFolder, 'sync',\
              create=True, exclude=self.excludedFolder)
     
-    def getTaskList(self, folder=None):
+    def getTaskList(self, folder=None, ending=".json"):
         if folder == None:
             folder = self.newTaskFolder
-        taskList = [f for f in os.listdir(folder) if f.endswith(".json")]
+        taskList = [f for f in os.listdir(folder) if f.endswith(ending)]
         return taskList
     
     def getTaskTable(self, task, folder=''):

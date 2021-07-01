@@ -31,9 +31,10 @@ def getUUID(origin):
     return uuid_str[:5]
 
 class Master:
-    def __init__(self, setup):
+    def __init__(self, setup, fastMode=False):
         self.setup = setup
         self.defaultFolder = os.getcwd()
+        self.fastMode = fastMode
         self.serverFolder = os.path.join(self.defaultFolder, 'Servers')
         self.mainFolder = self.setup['order']
         self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
@@ -76,9 +77,11 @@ class Master:
             print(msg)
         self.msgs.clear()
     
-    def getFileLastModifiedTime(self):
+    def getFileLastModifiedTime(self, taskFilePath=''):
+        if len(taskFilePath) == 0:
+            taskFilePath = self.taskFilePath
         taskTable_modifiedTime = datetime.fromtimestamp(\
-                            os.path.getmtime(self.taskFilePath))
+                            os.path.getmtime(taskFilePath))
         return taskTable_modifiedTime
     
     def getTaskList(self, folder=None):
@@ -152,6 +155,8 @@ class Master:
             if not skipFlag:
                 if int(server['num_running']) == 0:
                     num_target = 1
+                    if self.fastMode:
+                        num_target = math.ceil(len(df_temp)/len(self.serverList))
                 else:
                     cpu_avaiable = server['CPU_max'] - server['CPU_total']
                     cpu_per_task = server['CPU_matlab'] / server['num_running']
@@ -261,6 +266,25 @@ class Master:
             if all(df['Finished'] == 1):# move to finish folder 
                 path_done = os.path.join(self.finishedTaskFolder, task)
                 shutil.move(path, path_done)
+    
+    def generateManualTasks(self):
+        manualXlsx = os.path.join(self.mainFolder, 'TaskList_manual.xlsx')
+        if os.path.isfile(manualXlsx):
+            lastModifiedTime = self.getFileLastModifiedTime(manualXlsx)
+            lastModifiedTimeStr = datetime.strftime(\
+                                    lastModifiedTime, "%Y%m%d_%H%M%S")
+            oldJsonName = os.path.join(self.finishedTaskFolder,
+                                   'TaskList_'+lastModifiedTimeStr+'.json')
+            newJsonName = os.path.join(self.newTaskFolder,
+                                   'TaskList_'+lastModifiedTimeStr+'.json')
+            if os.path.isfile(oldJsonName):# already finished
+                return
+            if os.path.isfile(newJsonName):# already created
+                return
+            df = pd.read_excel(manualXlsx)
+            df = df.fillna('')
+            df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(getUUID)
+            writeJSON_from_df(newJsonName, df)
     
     def generateTasks(self):
         self.lastModifiedTime = self.getFileLastModifiedTime()

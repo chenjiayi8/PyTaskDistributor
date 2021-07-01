@@ -8,7 +8,7 @@ Created on Fri Jun  4 13:21:05 2021
 
 import os
 from PyTaskDistributor.util.config import readConfig, getHostName
-from PyTaskDistributor.core.master import Master
+from PyTaskDistributor.core.master import *
 import random
 
 config_path= os.path.join(os.getcwd(), 'config.txt')
