@@ -57,13 +57,16 @@ class Monitor():
     
     def printProgress(self, numMins=5):
         clearConsole()
-        print("Updated on {} and will fresh in {} mins".\
+        print("Updated on {} and will reload in {} mins".\
               format(parseTime(datetime.now()), numMins))
         self.printTaskProgress()
         return self.printServerProgress()
 
     def printTaskProgress(self):
-        print("Task:")
+        if self.master.fastMode:
+            print("Task (Fast mode):")
+        else:
+            print("Task:")
         df_tasks = pd.DataFrame(columns=self.columns_task)
         taskList = self.master.getTaskList()
         assignedSessions = []

@@ -10,6 +10,7 @@ from PyTaskDistributor.util.json import (
         readJSON_to_df, writeJSON_from_df, readJSON_to_dict)
 from PyTaskDistributor.util.others import updateXlsxFile, sleepMins
 from PyTaskDistributor.util.monitor import Monitor
+from PyTaskDistributor.util.extract import extractBetween
 import os
 import sys
 from datetime import datetime
@@ -51,6 +52,7 @@ class Master:
         try:
             if self.lastModifiedTime != self.getFileLastModifiedTime():
                 self.generateTasks()
+                self.generateManualTasks()
             self.updateServerList()
             self.updateTaskStatus()
             self.removeFinishedTask()
@@ -84,10 +86,10 @@ class Master:
                             os.path.getmtime(taskFilePath))
         return taskTable_modifiedTime
     
-    def getTaskList(self, folder=None):
+    def getTaskList(self, folder=None, ending=".json"):
         if folder == None:
             folder = self.newTaskFolder
-        taskList = [f for f in os.listdir(folder) if f.endswith(".json")]
+        taskList = [f for f in os.listdir(folder) if f.endswith(ending)]
         return taskList
     
     def updateServerList(self, timeout_mins=30):
@@ -111,12 +113,12 @@ class Master:
                 
     def workloadBalance(self):
         taskList = self.getTaskList()
-        if len(taskList) == 0:
-            return
         for task in taskList:
             if 'sync-conflict' in task:#conflict file from Syncthing
                 task_path = os.path.join(self.newTaskFolder, task)
                 os.unlink(task_path)
+        if len(taskList) == 0:
+            return
         task = random.choice(taskList)#Only balance one task per time
         task_path = os.path.join(self.newTaskFolder, task)
         df = readJSON_to_df(task_path)
@@ -125,7 +127,13 @@ class Master:
         index = ['-'.join(t) for t in temp]
         df.index = index
         df = df.fillna('')
-        for server in self.serverList:
+        fastmode_flag = self.fastMode
+        #override fastmode to True for small task
+        if len(df) <= len(self.serverList)*4:
+            fastmode_flag = True
+        numServer = len(self.serverList)
+        for i in range(numServer):
+            server = self.serverList[i]
             # check if assigned sessions are running
             skipFlag = False
             num_target = 0
@@ -134,13 +142,19 @@ class Master:
             #No more sessions
             if len(df_temp) == 0:
                 skipFlag = True
-                msg_cause += 'All sessions are assigned\n'
+                msg_cause = 'All sessions are assigned\n'
+                msg = "Assign 0 new sessions of {} for Server {} because: {}"\
+                        .format(task, server['name'], msg_cause)
+                self.msgs.append(msg)
+                continue
+                
             #assigned sessions but not running
             if len(server['currentSessions']) > server['num_running']:
                 skipFlag = True
                 msg_cause += 'Assigned sessions are not running\n'
             df_assigned = df[(df['HostName']==server['name'])&\
                              (df['Finished']!=1)]
+            
             #assigned sessions but not received
             for idx in df_assigned.index:
                 if idx not in server['currentSessions']:
@@ -154,9 +168,7 @@ class Master:
         
             if not skipFlag:
                 if int(server['num_running']) == 0:
-                    num_target = 1
-                    if self.fastMode:
-                        num_target = math.ceil(len(df_temp)/len(self.serverList))
+                    num_target = 4
                 else:
                     cpu_avaiable = server['CPU_max'] - server['CPU_total']
                     cpu_per_task = server['CPU_matlab'] / server['num_running']
@@ -165,8 +177,8 @@ class Master:
                     mem_per_task = server['MEM_matlab'] / server['num_running']
                     num_mem = math.floor(mem_avaiable/mem_per_task)
                     num_target = min([num_cpu, num_mem])
-                    if num_target > 2: #Max add 2 per cyce 
-                        num_target = 2
+                    if num_target > 4: #Max add 4 per cyce 
+                        num_target = 4
                     if num_target < 0:
                         num_target = 0
                 # CPU/MEM limit
@@ -179,6 +191,10 @@ class Master:
                 msg = "Assign 0 new sessions of {} for Server {} because: {}"\
                         .format(task, server['name'], msg_cause)
             else:# assign new session
+                if fastmode_flag:
+                    num_target = math.ceil(len(df_temp)/len(self.serverList))
+                    if i == numServer - 1: #Last Server get all sessions
+                        num_target = len(df_temp)
                 intialTaskIdx = list(df_temp.index)
                 random.shuffle(intialTaskIdx)
                 if len(intialTaskIdx) > num_target:
@@ -203,10 +219,7 @@ class Master:
         return finishedSessions
     
     def getTimeStr(self, task):
-        markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
-        dotLocation = [i for i, ltr in enumerate(task) if ltr == '.']
-        timeStr = task[markLocation[0]+1:dotLocation[-1]]
-        return timeStr
+        return extractBetween(task, 'TaskList_', '.json')[0]
     
     def readTask(self, path):
         df = readJSON_to_df(path)
@@ -267,20 +280,28 @@ class Master:
                 path_done = os.path.join(self.finishedTaskFolder, task)
                 shutil.move(path, path_done)
     
+    def existTask(self, json_name):
+        fileList = []
+        folderList = [self.finishedTaskFolder, self.newTaskFolder]
+        endings = ['json', 'bak', 'delete']
+        for folder in folderList:
+            for ending in endings:
+                fileList += self.getTaskList(folder=folder, ending=ending)
+                
+        existings = [json_name in file for file in fileList]
+        return any(existings)
+        
+    
     def generateManualTasks(self):
         manualXlsx = os.path.join(self.mainFolder, 'TaskList_manual.xlsx')
         if os.path.isfile(manualXlsx):
             lastModifiedTime = self.getFileLastModifiedTime(manualXlsx)
             lastModifiedTimeStr = datetime.strftime(\
                                     lastModifiedTime, "%Y%m%d_%H%M%S")
-            oldJsonName = os.path.join(self.finishedTaskFolder,
-                                   'TaskList_'+lastModifiedTimeStr+'.json')
-            newJsonName = os.path.join(self.newTaskFolder,
-                                   'TaskList_'+lastModifiedTimeStr+'.json')
-            if os.path.isfile(oldJsonName):# already finished
+            json_name =  'TaskList_'+lastModifiedTimeStr+'.json'
+            if self.existTask(json_name):# already created
                 return
-            if os.path.isfile(newJsonName):# already created
-                return
+            newJsonName = os.path.join(self.newTaskFolder,json_name)
             df = pd.read_excel(manualXlsx)
             df = df.fillna('')
             df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(getUUID)
@@ -290,14 +311,10 @@ class Master:
         self.lastModifiedTime = self.getFileLastModifiedTime()
         lastModifiedTimeStr = datetime.strftime(\
                                 self.lastModifiedTime, "%Y%m%d_%H%M%S")
-        oldJsonName = os.path.join(self.finishedTaskFolder,
-                               'TaskList_'+lastModifiedTimeStr+'.json')
-        newJsonName = os.path.join(self.newTaskFolder,
-                               'TaskList_'+lastModifiedTimeStr+'.json')
-        if os.path.isfile(oldJsonName):# already finished
+        json_name = 'TaskList_'+lastModifiedTimeStr+'.json'
+        if self.existTask(json_name):# already created
             return
-        if os.path.isfile(newJsonName):# already created
-            return
+        newJsonName = os.path.join(self.newTaskFolder, json_name)
         modifiedTime = os.path.getmtime(self.taskFilePath)
         parameterTable = pd.read_excel(self.taskFilePath,
                                        sheet_name='ParameterRange')

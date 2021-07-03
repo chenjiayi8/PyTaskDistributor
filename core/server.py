@@ -17,6 +17,7 @@ from PyTaskDistributor.core.session import Session
 from multiprocessing import Process, Manager
 import os
 import sys
+import math
 from glob import glob
 #import time
 from datetime import datetime
@@ -137,8 +138,6 @@ class Server:
         # wait for the starting of simulation
         sleepMins(1)
         self.updateSessionsStatus()
-        self.removeFinishedTask()
-        self.manualRemoveTask()
     
     def onStartTask(self):
         if int(self.statusDict['num_running']) == 0:
@@ -149,6 +148,8 @@ class Server:
             self.writeServerStatus()
         #remove finished sessions from current sessions
         self.removeFinishedSessions()
+        self.removeFinishedTask()
+        self.manualRemoveTask()
             
         
     
@@ -326,16 +327,35 @@ class Server:
             del self.processes[name]
         
     def workloadBalance(self, sessions):
-        if self.statusDict['CPU_total'] > self.CPU_max: return None
-        if self.statusDict['MEM_total'] > self.MEM_max: return None
-        if len(sessions) > 4:
-            keys = list(sessions.keys())
-            random.shuffle(keys)
-            keys_new = keys[:4]
-            sessions_new = {}
-            for k in keys_new: sessions_new[k] = sessions[k]
-            return sessions_new
-        return sessions
+        d = self.statusDict
+        if d['CPU_total'] > self.CPU_max: return None
+        if d['MEM_total'] > self.MEM_max: return None
+        if len(sessions) == 0: return None
+        num_target = 2
+        num_current = len(self.currentSessions)
+        if num_current == 0:
+            num_target = 4
+            
+        if d['num_running'] > 0:
+            cpu_avaiable = d['CPU_max'] - d['CPU_total']
+            cpu_per_task = d['CPU_matlab'] / d['num_running']
+            num_cpu = math.floor(cpu_avaiable/cpu_per_task)
+            mem_avaiable = d['MEM_max'] - d['MEM_total']
+            mem_per_task = d['MEM_matlab'] / d['num_running']
+            num_mem = math.floor(mem_avaiable/mem_per_task)
+            num_target = min([num_cpu, num_mem])
+            if num_target > 4: #Max add 4 per cyce 
+                num_target = 4
+            if num_target < 0:
+                num_target = 0
+        
+        print("Add {} sessions".format(num_target))
+        if num_target == 0: return None
+        if len(sessions) > num_target:
+            sessions_new = random.sample(sessions.items(), num_target)
+            return dict(sessions_new)
+        else:
+            return sessions
     
     def checkProcesses(self):
         for k, v in self.processes.items():
@@ -343,7 +363,7 @@ class Server:
                 print("Process for {} is killed".format(k))
     
     def runSessions(self, sessions):
-        if sessions:
+        if sessions is not None:
             for k, v in sessions.items():
                 p = Process(target=v.main)
                 p.start()
@@ -419,17 +439,10 @@ class Server:
             timeStr = self.getTimeStr(task)
             taskFolder = os.path.join(self.factoryFolder, 'Output', timeStr)
             self.cleanTaskTrace(task)
-            self.cleanFolder(taskFolder)
-            
-        
-    
+            self.cleanFolder(taskFolder, 'manualRemoveTask', delete=True)
     
     def getTimeStr(self, task):
-#        markLocation = [i for i, ltr in enumerate(task) if ltr == '_']
-#        dotLocation = [i for i, ltr in enumerate(task) if ltr == '.']
-#        timeStr = task[markLocation[0]+1:dotLocation[-1]]
-        timeStr = extractBetween(task, 'TaskList_', '.json')[0]
-        return timeStr
+        return extractBetween(task, 'TaskList_', '.json')[0]
     
     def updateFolderPaths(self, task):
         timeStr = self.getTimeStr(task)
@@ -455,10 +468,8 @@ class Server:
         self.deliveryTask(targetFolder, timeStr)
         #update finishedSessions will happen in onStartTask         
         #clean session folder
-        self.cleanFolder(sourceFolder)
-        shutil.rmtree(sourceFolder)
-        pass
-    
+        self.cleanFolder(sourceFolder, 'postprocessTask', delete=True)
+
     def deliveryTask(self, targetFolder, timeStr):
         targetFolder = os.path.normpath(targetFolder)
         deliveryFolderPath = os.path.join(\
@@ -496,7 +507,10 @@ class Server:
                 del self.currentSessions[session]
             if session in self.statusDict['currentSessions']:
                 self.statusDict['currentSessions'].remove(session)
-            if key in self.statusDict['finishedSessions']:
+                
+        keys = list(self.statusDict['finishedSessions'].keys())
+        for key in keys:
+            if timeStr in key:
                 del self.statusDict['finishedSessions'][key]
             
 
@@ -506,20 +520,23 @@ class Server:
         unfinishedSessions, outputFolder = self.getUnfinishedSessions()
         for session in unfinishedSessions:
             folder_path = os.path.join(outputFolder, session)
-            self.cleanFolder(folder_path)
-            shutil.rmtree(folder_path)
+            self.cleanFolder(folder_path, 'cleanUnfinishedTasks', delete=True)
         self.currentSessions.clear()
         self.statusDict['currentSessions'].clear()
     
-    def cleanFolder(self, folerName):
+    def cleanFolder(self, folerName, caller='', delete=False):
         if os.path.isdir(folerName):
-            print("Cleanning folder {}".format(folerName))
+            # remove all the content recursively
+            print("Cleanning folder {} by {}".format(folerName, caller))
             for filename in os.listdir(folerName):
                 file_path = os.path.join(folerName, filename)
                 if os.path.isfile(file_path) or os.path.islink(file_path):
                     os.unlink(file_path)
                 elif os.path.isdir(file_path):
                     shutil.rmtree(file_path)
+            if delete:#delete this folder
+                shutil.rmtree(folerName)
+            
     
     def prepareFactory(self):
         sync(self.mainFolder, self.factoryFolder, 'sync',\

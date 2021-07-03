@@ -138,13 +138,20 @@ class Session:
         if 'err_msg' in output:
             output['Comments'] = output['err_msg']
         else:
-            output['Comments'] = os.path.basename(matPath)
+            if matPath is not None:
+                output['Comments'] = os.path.basename(matPath)
+            else:
+                with open(self.logFile, 'rt') as f:
+                    lines = f.read().splitlines()
+                    lines = lines[1:]
+                    output['Finished'] = 1
+                    output['Comments'] = '|'.join(lines)
         targetFolder = os.path.join(self.matFolderPath, folderName)
         #copy simulation results to task result folder
         copy_tree(sourceFolder, targetFolder)
         # delivery everything excluding mat file
         self.deliveryTask(targetFolder)
-        shutil.rmtree(sourceFolder)
+        self.server.cleanFolder(sourceFolder, 'runMatlabTask in Session', delete=True)
         os.chdir(self.defaultFolder)
         return output
   
