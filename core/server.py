@@ -8,13 +8,13 @@ Created on Fri Jun  4 13:21:08 2021
 
 from PyTaskDistributor.util.others import (
         sleepMins, getProcessList, getLatestFileInFolder,
-        getProcessCPU, getNumProcessor, getFileSuffix)
+        getProcessCPU, getNumProcessor, getFileSuffix, isZombie)
 from PyTaskDistributor.util.json import (
          writeJSON_from_dict, readJSON_to_df, readJSON_to_dict)
 
 from PyTaskDistributor.util.extract import extractBetween
 from PyTaskDistributor.core.session import Session
-from multiprocessing import Process, Manager
+from multiprocessing import Manager
 import os
 import sys
 import math
@@ -54,7 +54,7 @@ class Server:
         self.excludedFolder=['Output', 'NewTasks', 'FinishedTasks', '.git']
         self.manager = Manager()
         self.currentSessions = self.manager.dict()
-        self.processes = {}
+        self.sessionsDict = {}
         self.status_names = ['CPU_total', 'MEM_total',
                              'CPU_matlab', 'MEM_matlab']
         self.status_record = np.zeros(len(self.status_names)+1, dtype=float)
@@ -184,40 +184,60 @@ class Server:
                             lambda x: 'matlab -mvminputpipe' in x.lower())]
         return df, df_matlab
     
-    def dealWithZombieSession(self, df_matlab):
-        zombieSessions_this = []
-        # find zombie sessions for this cycle
-        for i in range(len(df_matlab)):
-            if df_matlab.loc[i, 'CPU'] < 10:
-                pid = df_matlab.loc[i, 'pid']
-                zombieSessions_this.append(pid)
-                if pid not in self.zombieSessions:
-                    self.zombieSessions[pid]  = 1
-                else:
-                    self.zombieSessions[pid] += 1
+#    def dealWithZombieSession(self, df_matlab):
+#        zombieSessions_this = []
+#        # find zombie sessions for this cycle
+#        for i in range(len(df_matlab)):
+#            if df_matlab.loc[i, 'CPU'] < 10:
+#                pid = df_matlab.loc[i, 'pid']
+#                zombieSessions_this.append(pid)
+#                if pid not in self.zombieSessions:
+#                    self.zombieSessions[pid]  = 1
+#                else:
+#                    self.zombieSessions[pid] += 1
+#        
+#        # kill zombie sessions which marked continously   
+#        pids = list(self.zombieSessions.keys())
+#        for p in pids:
+#            if p not in zombieSessions_this:
+#                # remove sessions were zombie but not this cycle
+#                del self.zombieSessions[p]
+#            elif self.zombieSessions[p] > 30:#30*(1+randint(2,4)) == 120 mins
+#                # kill sessions were zombie for 2 hours
+#                try: #try to kill
+#                    exitcode = os.system("kill -9 {}".format(p))
+#                    if exitcode == 0:
+#                        del self.zombieSessions[p]
+#                        print("kill zombie {}".format(p))
+#                    else:
+#                        print("Cannot kill {}".format(p))
+#                except (KeyboardInterrupt, SystemExit):
+#                    raise
+#                except:
+#                    print ("Need assisstance for kill session:\n {}"\
+#                   .format(sys.exc_info()))
+#                    traceBackObj = sys.exc_info()[2]
+#                    traceback.print_tb(traceBackObj)
         
-        # kill zombie sessions which marked continously   
-        pids = list(self.zombieSessions.keys())
-        for p in pids:
-            if p not in zombieSessions_this:
-                # remove sessions were zombie but not this cycle
-                del self.zombieSessions[p]
-            elif self.zombieSessions[p] > 30:#30*(1+randint(2,4)) == 120 mins
-                # kill sessions were zombie for 2 hours
-                try: #try to kill
-                    exitcode = os.system("kill -9 {}".format(p))
-                    if exitcode == 0:
-                        del self.zombieSessions[p]
-                        print("kill zombie {}".format(p))
-                    else:
-                        print("Cannot kill {}".format(p))
-                except (KeyboardInterrupt, SystemExit):
-                    raise
-                except:
-                    print ("Need assisstance for kill session:\n {}"\
-                   .format(sys.exc_info()))
-                    traceBackObj = sys.exc_info()[2]
-                    traceback.print_tb(traceBackObj)
+    
+    def dealWithZombieSessions(self):
+        keys = list(self.sessionsDict.keys())
+        for key in keys:
+            session = self.sessionsDict[key]
+            pid = session.pid
+            if pid != -1:
+                cpu = getProcessCPU(session.pid)
+                if cpu < 10.0:
+                    session.zombieState += 1
+                else:
+                     session.zombieState = 0 # reset
+             
+                if session.zombieState > 30:
+                    session.cleanWorkspace('being zombie')
+                    del self.sessionsDict[key]
+                if isZombie(session.pid):
+                    session.cleanWorkspace('being zombie')
+                    del self.sessionsDict[key]
                
     
     def updateServerStatus(self):
@@ -233,7 +253,7 @@ class Server:
             df_matlab = df_matlab.reset_index(drop=True)
             #measure the CPU usage of matlab process
             df_matlab['CPU'] = df_matlab['pid'].apply(getProcessCPU)
-            self.dealWithZombieSession(df_matlab)
+            self.dealWithZombieSessions()
             self.statusDict['num_running'] = len(df_matlab)
             self.statusDict['CPU_matlab'] = \
                         round(df_matlab['CPU'].sum()/getNumProcessor(), 2)
@@ -260,7 +280,7 @@ class Server:
         if len(sessions) > 0:
             targetSessions = []
             targetMatPaths = []
-            processes = []
+            sessions_temp = []
             for session in sessions:
                 key = self.taskTimeStr+'_'+session
                 if key not in self.statusDict['finishedSessions']:
@@ -283,11 +303,18 @@ class Server:
                             
             for i in range(len(targetMatPaths)):
                 obj = Session(self, targetSessions[i], targetMatPaths[i])
-                p = Process(target=obj.markFinishedSession)
-                p.start()
-                processes.append(p)
-            for p in processes:
-                p.join()
+                jsonPath = targetMatPaths[i][:-4] +'.json'
+                if os.path.isfile(jsonPath):
+                    output = obj.readOutput()
+                    output['Finished'] = 1
+                    key = self.taskTimeStr+'_'+targetSessions[i]
+                    self.statusDict['finishedSessions'][key] = output
+                else:
+                    obj.main(target='markFinishedSession')
+                    sessions_temp.append(obj)
+                    
+            for obj in sessions_temp:
+                obj.process.join()
 
     def getFinishedSessions(self):
         if os.path.isdir(self.matFolderPath):
@@ -320,11 +347,11 @@ class Server:
         return df2
     
     def isRunning(self, session):
-        if session not in self.processes:
+        if session not in self.sessionsDict:
             return False
         else:
-            p = self.processes[session]
-            if not p.is_alive():
+            s = self.sessionsDict[session]
+            if not s.process.is_alive():
                 return False
             else:
                 return True 
@@ -360,8 +387,8 @@ class Server:
             self.statusDict['currentSessions'].remove(name)
         if name in self.currentSessions:
             del self.currentSessions[name]
-        if name in self.processes:
-            del self.processes[name]
+        if name in self.sessionsDict:
+            del self.sessionsDict[name]
         
     def workloadBalance(self, sessions):
         d = self.statusDict
@@ -371,7 +398,7 @@ class Server:
         num_target = 2
         num_current = len(self.currentSessions)
         if num_current == 0:
-            num_target = 4
+            num_target = 1
             
         if d['num_running'] > 0:
             cpu_avaiable = d['CPU_max'] - d['CPU_total']
@@ -394,17 +421,34 @@ class Server:
         else:
             return sessions
     
-    def checkProcesses(self):
-        for k, v in self.processes.items():
-            if not v.is_alive():
+    def checkSessions(self):
+        for k, s in self.sessionsDict.items():
+            if not s.process.is_alive():
                 print("Process for {} is killed".format(k))
+    
+    
+    
     
     def runSessions(self, sessions):
         if sessions is not None:
-            for k, v in sessions.items():
-                p = Process(target=v.main)
-                p.start()
-                self.processes[k] = p
+            # record pid first
+            for k, s in sessions.items():
+                s.createMatlabEng()
+                s.input[1] = 10*60# debug
+                self.sessionsDict[k] = s
+                
+            # run the session
+            for k, s in sessions.items():
+                s.main()
+            # go back to defaultFolder
+            os.chdir(self.defaultFolder)
+            
+            
+    def killAllSessions(self):
+        keys = list(self.sessionsDict.keys())
+        for k in keys:
+            self.sessionsDict[k].cleanWorkspace('killing all sessions')
+            del self.sessionsDict[k]
 
     def getFinishedSessionKey(self, session):
         taskList = self.getTaskList()
@@ -431,36 +475,47 @@ class Server:
                 if key in self.statusDict['currentSessions']:
                     self.statusDict['currentSessions'].remove(key)
                 if key in self.currentSessions:
-                    del  self.currentSessions[key]
+                    del self.currentSessions[key]
     
     def updateSessionsStatus(self):
-        for k, v in self.currentSessions.items():
+        keys = list(self.sessionsDict.keys())
+        for k in keys:
+            s = self.sessionsDict[k]
             # check process status
-            if k not in self.processes:
+            if k not in self.currentSessions:
                 self.statusDict['msg'].append(\
                        '{} is not in Processes'.format(k))
             else:
-                p = self.processes[k]
-                if not p.is_alive():
-                    if p.exitcode != 0:
+                if not s.process.is_alive():
+                    if s.process.exitcode != 0:
                         timeStr = datetime.now().isoformat()
                         self.statusDict['msg'].append(\
                     '{} {} is exited with exitcode {}\n'\
-                    .format(timeStr, k, p.exitcode))
-                    p.terminate()
-                    del self.processes[k]
+                    .format(timeStr, k, s.process.exitcode))
+                    if k in self.currentSessions:
+                        del self.currentSessions[k]
+                    self.sessionsDict[k].cleanWorkspace('exiting with error')
+                    del self.sessionsDict[k]
                         
             # add session
             if k not in self.statusDict['currentSessions']:
                 self.statusDict['currentSessions'].append(k)
-            if v != 1: # remove session
+                
+            if s.hasFinished():
+                s.output = s.readOutput()
+            if s.output != -1: # remove session
                 key = self.getFinishedSessionKey(k)
                 if key:
-                    self.statusDict['finishedSessions'][key] = v
-                if k in self.processes:
-                    del self.processes[k]
-                self.statusDict['currentSessions'].remove(k)
-                del self.currentSessions[k]
+                    self.statusDict['finishedSessions'][key] = s.output
+                if k in self.currentSessions:
+                    del self.currentSessions[k]
+                if k in self.statusDict['currentSessions']:
+                    self.statusDict['currentSessions'].remove(k)
+                if k in self.sessionsDict:
+#                    print("Will delete {} because of finished".format(k))
+                    self.sessionsDict[k].cleanWorkspace('finished')
+                    self.sessionsDict[k].postProcess()
+                    del self.sessionsDict[k]
     
     def removeFinishedTask(self):
         taskList = self.getTaskList(folder=self.finishedTaskFolder)

@@ -21,11 +21,11 @@ def emptySheetExcludeHeaders(ws):
             for cell in row:
                 cell.value = None
     
-def getLatestFileInFolder(folder):
+def getLatestFileInFolder(folder, ending=''):
     if not os.path.isdir(folder):
         return None
     fileList = os.listdir(folder)
-    pathList = [os.path.join(folder, file) for file in fileList]
+    pathList = [os.path.join(folder, file) for file in fileList if file.endswith(ending)]
     pathList_file = list(filter(os.path.isfile, pathList))
     if len(pathList_file) == 0:
         return None
@@ -83,6 +83,12 @@ def getProcessList():
 
 def getNumProcessor():
     return psutil.cpu_count()
+
+def isZombie(pid):
+    try:
+        return psutil.Process(pid).status().lower() == 'zombie'
+    except:
+        return True
 
 def getProcessCPU(pid):
     try:
