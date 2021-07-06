@@ -58,6 +58,7 @@ class Server:
         self.status_names = ['CPU_total', 'MEM_total',
                              'CPU_matlab', 'MEM_matlab']
         self.status_record = np.zeros(len(self.status_names)+1, dtype=float)
+        self.zombieSessions = {}
         self.initialise()
 
     
@@ -183,6 +184,42 @@ class Server:
                             lambda x: 'matlab -mvminputpipe' in x.lower())]
         return df, df_matlab
     
+    def dealWithZombieSession(self, df_matlab):
+        zombieSessions_this = []
+        # find zombie sessions for this cycle
+        for i in range(len(df_matlab)):
+            if df_matlab.loc[i, 'CPU'] < 10:
+                pid = df_matlab.loc[i, 'pid']
+                zombieSessions_this.append(pid)
+                if pid not in self.zombieSessions:
+                    self.zombieSessions[pid]  = 1
+                else:
+                    self.zombieSessions[pid] += 1
+        
+        # kill zombie sessions which marked continously   
+        pids = list(self.zombieSessions.keys())
+        for p in pids:
+            if p not in zombieSessions_this:
+                # remove sessions were zombie but not this cycle
+                del self.zombieSessions[p]
+            elif self.zombieSessions[p] > 30:#30*(1+randint(2,4)) == 120 mins
+                # kill sessions were zombie for 2 hours
+                try: #try to kill
+                    exitcode = os.system("kill -9 {}".format(p))
+                    if exitcode == 0:
+                        del self.zombieSessions[p]
+                        print("kill zombie {}".format(p))
+                    else:
+                        print("Cannot kill {}".format(p))
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except:
+                    print ("Need assisstance for kill session:\n {}"\
+                   .format(sys.exc_info()))
+                    traceBackObj = sys.exc_info()[2]
+                    traceback.print_tb(traceBackObj)
+               
+    
     def updateServerStatus(self):
         df, df_matlab = self.getProcesses()
         self.statusDict['CPU_total'] = round(psutil.cpu_percent(interval=1), 2)
@@ -196,10 +233,10 @@ class Server:
             df_matlab = df_matlab.reset_index(drop=True)
             #measure the CPU usage of matlab process
             df_matlab['CPU'] = df_matlab['pid'].apply(getProcessCPU)
-            numProcessor = getNumProcessor()
+            self.dealWithZombieSession(df_matlab)
             self.statusDict['num_running'] = len(df_matlab)
             self.statusDict['CPU_matlab'] = \
-                        round(df_matlab['CPU'].sum()/numProcessor, 2)
+                        round(df_matlab['CPU'].sum()/getNumProcessor(), 2)
             self.statusDict['MEM_matlab'] = round(sum(df_matlab['Mem']), 2)
         else:
             self.statusDict['num_running'] = 0
