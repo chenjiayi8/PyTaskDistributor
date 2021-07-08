@@ -6,358 +6,347 @@ Created on Sat Jul 18 10:05:04 2020
 @author: frank
 """
 
-from PyTaskDistributor.util.json import (
-        readJSON_to_df, writeJSON_from_df, readJSON_to_dict)
-from PyTaskDistributor.util.others import updateXlsxFile, sleepMins
-from PyTaskDistributor.util.monitor import Monitor
-from PyTaskDistributor.util.extract import extractBetween
-import os
-import sys
-from datetime import datetime
-import dateutil
-import pandas as pd
-import numpy as np
-from itertools import product as prod
 import math
+import os
 import random
-import uuid
-import traceback
-#import time
 import shutil
+import sys
+import traceback
+from datetime import datetime
+from itertools import product as prod
+from os.path import join as p_join
 
-def getUUID(origin):
-    rd = random.Random()
-#    rd.seed(0)
-    uuid_str = str(uuid.UUID(int=rd.getrandbits(128)))
-    return uuid_str[:5]
+from dateutil import parser
+import numpy as np
+import pandas as pd
+
+from PyTaskDistributor.util.extract import extract_between
+from PyTaskDistributor.util.json import (read_json_to_df, read_json_to_dict, write_json_from_df)
+from PyTaskDistributor.util.monitor import Monitor
+from PyTaskDistributor.util.others import sleep_mins, update_xlsx_file, get_uuid
+
 
 class Master:
-    def __init__(self, setup, fastMode=False):
+    def __init__(self, setup, fast_mode=False):
         self.setup = setup
-        self.defaultFolder = os.getcwd()
-        self.fastMode = fastMode
-        self.serverFolder = os.path.join(self.defaultFolder, 'Servers')
-        self.mainFolder = self.setup['order']
-        self.newTaskFolder = os.path.join(self.mainFolder, 'NewTasks')
-        self.finishedTaskFolder = os.path.join(self.mainFolder,
-                                               'FinishedTasks')
-        self.taskFilePath = os.path.join(self.mainFolder, 'TaskList.xlsx')
-        self.lastModifiedTime = ''
+        self.default_folder = os.getcwd()
+        self.fast_mode = fast_mode
+        self.server_folder = p_join(self.default_folder, 'Servers')
+        self.main_folder = self.setup['order']
+        self.new_task_folder = p_join(self.main_folder, 'NewTasks')
+        self.finished_task_folder = p_join(self.main_folder, 'FinishedTasks')
+        self.task_file_path = p_join(self.main_folder, 'TaskList.xlsx')
+        self.last_modified_time = ''
         self.monitor = Monitor(self)
+        self.server_list = []
         self.msgs = []
         pass
-    
+
     def main(self):
-        numMin = random.randint(3,5)
+        num_min = random.randint(3, 5)
         try:
-            if self.lastModifiedTime != self.getFileLastModifiedTime():
-                self.generateTasks()
-                self.generateManualTasks()
-            self.updateServerList()
-            self.updateTaskStatus()
-            self.removeFinishedTask()
-            self.workloadBalance()
-            self.printProgress(numMin)
-            self.printMsgs()
-            sleepMins(numMin)
-            needAssistance = False
+            if self.last_modified_time != self.get_file_last_modified_time():
+                self.generate_tasks()
+                self.generate_manual_tasks()
+            self.update_server_list()
+            self.update_task_status()
+            self.remove_finished_task()
+            self.workload_balance()
+            self.print_progress(num_min)
+            self.print_msgs()
+            sleep_mins(num_min)
+            need_assistance = False
         except (KeyboardInterrupt, SystemExit):
             raise
         except:
-            print ("Need assisstance for unexpected error:\n {}"\
-                   .format(sys.exc_info()))
-            traceBackObj = sys.exc_info()[2]
-            traceback.print_tb(traceBackObj)
-            needAssistance = True
-        return needAssistance
-     
-    def printProgress(self, numMin=5):
-        self.monitor.printProgress(numMin)
-        
-    def printMsgs(self):
+            print("Need assistance for unexpected error:\n {}".format(sys.exc_info()))
+            trace_back_obj = sys.exc_info()[2]
+            traceback.print_tb(trace_back_obj)
+            need_assistance = True
+        return need_assistance
+
+    def print_progress(self, num_min=5):
+        self.monitor.print_progress(num_min)
+
+    def print_msgs(self):
         for msg in self.msgs:
             print(msg)
         self.msgs.clear()
-    
-    def getFileLastModifiedTime(self, taskFilePath=''):
-        if len(taskFilePath) == 0:
-            taskFilePath = self.taskFilePath
-        taskTable_modifiedTime = datetime.fromtimestamp(\
-                            os.path.getmtime(taskFilePath))
-        return taskTable_modifiedTime
-    
-    def getTaskList(self, folder=None, ending=".json"):
-        if folder == None:
-            folder = self.newTaskFolder
-        taskList = [f for f in os.listdir(folder) if f.endswith(ending)]
-        return taskList
-    
-    def updateServerList(self, timeout_mins=30):
-        serverList = [f for f in os.listdir(self.serverFolder)\
-                      if f.endswith(".json")]
-        self.serverList = []
-        for s in serverList:
+
+    def get_file_last_modified_time(self, file_path=None):
+        if file_path is None:
+            file_path = self.task_file_path
+        modified_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+        return modified_time
+
+    def get_task_list(self, folder=None, ending=".json"):
+        if folder is None:
+            folder = self.new_task_folder
+        task_list = [f for f in os.listdir(folder) if f.endswith(ending)]
+
+        def not_clean_or_purge(task):  # skip these task for another server
+            if task.lower().endswith('_clean.json'):
+                return False
+            if task.lower().endswith('_purge.json'):
+                return False
+            return True
+
+        task_list = list(filter(not_clean_or_purge, task_list))
+        return task_list
+
+    def update_server_list(self, timeout_mins=30):
+        server_list = [f for f in os.listdir(self.server_folder) if f.endswith(".json")]
+        self.server_list.clear()
+        for s in server_list:
             try:
-                s_path = os.path.join(self.serverFolder, s)
+                s_path = p_join(self.server_folder, s)
                 if 'sync-conflict' in s:
                     os.unlink(s_path)
                 else:
-                    s_json = readJSON_to_dict(s_path)
-                    s_time = dateutil.parser.parse(s_json['updated_time'])
-                    diff_min = (datetime.now() - s_time).seconds/60
-                    if diff_min < timeout_mins:#only use if updated within N mins
-                        self.serverList.append(s_json)
+                    s_json = read_json_to_dict(s_path)
+                    s_time = parser.parse(s_json['updated_time'])
+                    diff_min = (datetime.now() - s_time).seconds / 60
+                    if diff_min < timeout_mins:  # only use if updated within N mins
+                        self.server_list.append(s_json)
             except:
                 print("Failed to read status of {}".format(s))
                 pass
-                
-    def workloadBalance(self):
-        taskList = self.getTaskList()
-        for task in taskList:
-            if 'sync-conflict' in task:#conflict file from Syncthing
-                task_path = os.path.join(self.newTaskFolder, task)
+
+    def workload_balance(self):
+        task_list = self.get_task_list()
+        for task in task_list:
+            if 'sync-conflict' in task:  # conflict file from Syncthing
+                task_path = p_join(self.new_task_folder, task)
                 os.unlink(task_path)
-        if len(taskList) == 0:
+        if len(task_list) == 0:
             return
-        task = random.choice(taskList)#Only balance one task per time
-        task_path = os.path.join(self.newTaskFolder, task)
-        df = readJSON_to_df(task_path)
+        task = random.choice(task_list)  # Only balance one task per time
+        task_path = p_join(self.new_task_folder, task)
+        df = read_json_to_df(task_path)
         df = df.sort_values('Num')
-        temp = list(zip(['Task']*len(df), df['Num'].apply(str) , df['UUID']))
+        temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
         index = ['-'.join(t) for t in temp]
         df.index = index
         df = df.fillna('')
-        fastmode_flag = self.fastMode
-        #override fastmode to True for small task
-        if len(df) <= len(self.serverList)*4:
-            fastmode_flag = True
-        numServer = len(self.serverList)
-        for i in range(numServer):
-            server = self.serverList[i]
+        fasted_flag = self.fast_mode
+        # override fastmode to True for small task
+        if len(df) <= len(self.server_list) * 4:
+            fasted_flag = True
+        num_server = len(self.server_list)
+        for i in range(num_server):
+            server = self.server_list[i]
             # check if assigned sessions are running
-            skipFlag = False
+            skip_flag = False
             num_target = 0
             msg_cause = ''
-            df_temp = df[df['HostName']=='']
-            #No more sessions
+            df_temp = df[df['HostName'] == '']
+            # No more sessions
             if len(df_temp) == 0:
-                skipFlag = True
                 msg_cause = 'All sessions are assigned\n'
-                msg = "Assign 0 new sessions of {} for Server {} because: {}"\
-                        .format(task, server['name'], msg_cause)
+                msg = "Assign 0 new sessions of {} for Server {} because: {}".format(task, server['name'], msg_cause)
                 self.msgs.append(msg)
                 continue
-                
-            #assigned sessions but not running
+
+            # assigned sessions but not running
             if len(server['currentSessions']) > server['num_running']:
-                skipFlag = True
+                skip_flag = True
                 msg_cause += 'Assigned sessions are not running\n'
-            df_assigned = df[(df['HostName']==server['name'])&\
-                             (df['Finished']!=1)]
-            
-            #assigned sessions but not received
+            df_assigned = df[(df['HostName'] == server['name']) & (df['Finished'] != 1)]
+
+            # assigned sessions but not received
             for idx in df_assigned.index:
                 if idx not in server['currentSessions']:
-                    finishedSessions = server['finishedSessions'].keys()
-                    idx_in_finishedSessions = [idx in s for s in finishedSessions]
-                    if not any(idx_in_finishedSessions):
-                        if not skipFlag:
+                    finished_sessions = server['finishedSessions'].keys()
+                    idx_in_finished_sessions = [idx in s for s in finished_sessions]
+                    if not any(idx_in_finished_sessions):
+                        if not skip_flag:
                             msg_cause += '\n'
-                        skipFlag = True
+                        skip_flag = True
                         msg_cause += 'Assigned session {} are not received\n'.format(idx)
-        
-            if not skipFlag:
+
+            if not skip_flag:
                 if int(server['num_running']) == 0:
                     num_target = 4
                 else:
-                    cpu_avaiable = server['CPU_max'] - server['CPU_total']
+                    cpu_available = server['CPU_max'] - server['CPU_total']
                     cpu_per_task = server['CPU_matlab'] / server['num_running']
-                    num_cpu = math.floor(cpu_avaiable/cpu_per_task)
-                    mem_avaiable = server['MEM_max'] - server['MEM_total']
+                    num_cpu = math.floor(cpu_available / cpu_per_task)
+                    mem_available = server['MEM_max'] - server['MEM_total']
                     mem_per_task = server['MEM_matlab'] / server['num_running']
-                    num_mem = math.floor(mem_avaiable/mem_per_task)
+                    num_mem = math.floor(mem_available / mem_per_task)
                     num_target = min([num_cpu, num_mem])
-                    if num_target > 4: #Max add 4 per cyce 
+                    if num_target > 4:  # Max add 4 per cycle
                         num_target = 4
                     if num_target < 0:
                         num_target = 0
                 # CPU/MEM limit
                 if num_target == 0:
-                    skipFlag = True
+                    skip_flag = True
                     msg_cause += 'reaching CPU/MEM limit'
-                
+
             # Do not assign new session
-            if skipFlag: 
-                msg = "Assign 0 new sessions of {} for Server {} because: {}"\
-                        .format(task, server['name'], msg_cause)
-            else:# assign new session
-                if fastmode_flag:
-                    num_target = math.ceil(len(df_temp)/len(self.serverList))
-                    if i == numServer - 1: #Last Server get all sessions
+            if skip_flag:
+                msg = "Assign 0 new sessions of {} for Server {} because: {}" \
+                    .format(task, server['name'], msg_cause)
+            else:  # assign new session
+                if fasted_flag:
+                    num_target = math.ceil(len(df_temp) / len(self.server_list))
+                    if i == num_server - 1:  # Last Server get all sessions
                         num_target = len(df_temp)
-                intialTaskIdx = list(df_temp.index)
-                random.shuffle(intialTaskIdx)
-                if len(intialTaskIdx) > num_target:
-                    intialTaskIdx = intialTaskIdx[:num_target]
+                index = list(df_temp.index)
+                random.shuffle(index)
+                if len(index) > num_target:
+                    index = index[:num_target]
                 else:
-                    num_target = len(intialTaskIdx)
-                for i in range(len(intialTaskIdx)):
-                    df.loc[intialTaskIdx[i], 'HostName'] = server['name']
-                msg = "Assign {} new sessions of {} for Server {}"\
-                            .format(num_target, task, server['name'])
+                    num_target = len(index)
+                for ii in range(len(index)):
+                    df.loc[index[ii], 'HostName'] = server['name']
+                msg = "Assign {} new sessions of {} for Server {}".format(num_target, task, server['name'])
             # record msg
             self.msgs.append(msg)
-        writeJSON_from_df(task_path, df)
-    
-    def getFinishedSessions(self):
-        finishedSessions = {}
-        for server in self.serverList:   
-            tempDict = server['finishedSessions']
-            for _, v in tempDict.items():
+        write_json_from_df(task_path, df)
+
+    def get_finished_sessions(self):
+        finished_sessions = {}
+        for server in self.server_list:
+            temp_dict = server['finishedSessions']
+            for _, v in temp_dict.items():
                 v['HostName'] = server['name']
-            finishedSessions.update(tempDict)
-        return finishedSessions
-    
-    def getTimeStr(self, task):
-        return extractBetween(task, 'TaskList_', '.json')[0]
-    
-    def readTask(self, path):
-        df = readJSON_to_df(path)
+            finished_sessions.update(temp_dict)
+        return finished_sessions
+
+    @staticmethod
+    def get_time_str(task):
+        return extract_between(task, 'TaskList_', '.json')[0]
+
+    @staticmethod
+    def read_task(path):
+        df = read_json_to_df(path)
         df = df.sort_values('Num')
-        temp = list(zip(['Task']*len(df),\
-                df['Num'].apply(str) , df['UUID']))
+        temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
         index = ['-'.join(t) for t in temp]
         df.index = index
         df = df.fillna('')
         return df
-    
-    def markTaskDF(self, task, df, finishedSessions):
+
+    @staticmethod
+    def mark_task_df(task, df, finished_sessions):
         modified_flag = False
-        for key in finishedSessions.keys():
-            underlineLocs = [i for i, ltr in enumerate(key) if ltr == '_']
-            taskTimeStr = key[:underlineLocs[1]]
-            index = key[underlineLocs[1]+1:]
-            if taskTimeStr in task and index in df.index:
-                #only modify when necessary
+        for key in finished_sessions.keys():
+            underline_positions = [i for i, ltr in enumerate(key) if ltr == '_']
+            task_time_str = key[:underline_positions[1]]
+            index = key[underline_positions[1] + 1:]
+            if task_time_str in task and index in df.index:
+                # only modify when necessary
                 if df.loc[index, 'Finished'] != 1:
-                    values = finishedSessions[key]
+                    values = finished_sessions[key]
                     modified_flag = True
                     for k, v in values.items():
                         df.loc[index, k] = v
         return modified_flag
-    
-    def removeFinishedTask(self):
-        taskList = self.getTaskList(folder=self.finishedTaskFolder)
-        if len(taskList) == 0:#skip if no new finished task
+
+    def remove_finished_task(self):
+        task_list = self.get_task_list(folder=self.finished_task_folder)
+        if len(task_list) == 0:  # skip if no new finished task
             return
-        finishedSessions = self.getFinishedSessions()
-        for task in taskList:
-            path = os.path.join(self.finishedTaskFolder, task)
-            path_xlsx = os.path.join(self.mainFolder,\
-                                     'Output', task[:-5]+'.xlsx')
-            df = self.readTask(path)
-            modified_flag = self.markTaskDF(task, df, finishedSessions)
+        finished_sessions = self.get_finished_sessions()
+        for task in task_list:
+            path = p_join(self.finished_task_folder, task)
+            path_xlsx = p_join(self.main_folder, 'Output', task[:-5] + '.xlsx')
+            df = self.read_task(path)
+            modified_flag = self.mark_task_df(task, df, finished_sessions)
             if modified_flag:
-                writeJSON_from_df(path, df)
-                updateXlsxFile(path_xlsx, df)
-            if all(df['Finished'] == 1):# rename to json.bak 
-                path_done = os.path.join(self.finishedTaskFolder, task+'.bak')
+                write_json_from_df(path, df)
+                update_xlsx_file(path_xlsx, df)
+            if all(df['Finished'] == 1):  # rename to json.bak
+                path_done = p_join(self.finished_task_folder, task + '.bak')
                 shutil.move(path, path_done)
-        
-    def updateTaskStatus(self):
-        taskList = self.getTaskList()
-        finishedSessions = self.getFinishedSessions()
-        for task in taskList:
-            path = os.path.join(self.newTaskFolder, task)
-            path_xlsx = os.path.join(self.mainFolder,\
-                                     'Output', task[:-5]+'.xlsx')
-            df = self.readTask(path)
-            modified_flag = self.markTaskDF(task, df, finishedSessions)
+
+    def update_task_status(self):
+        task_list = self.get_task_list()
+        finished_sessions = self.get_finished_sessions()
+        for task in task_list:
+            path = p_join(self.new_task_folder, task)
+            path_xlsx = p_join(self.main_folder, 'Output', task[:-5] + '.xlsx')
+            df = self.read_task(path)
+            modified_flag = self.mark_task_df(task, df, finished_sessions)
             if modified_flag:
-                writeJSON_from_df(path, df)
-                updateXlsxFile(path_xlsx, df)
-            if all(df['Finished'] == 1):# move to finish folder 
-                path_done = os.path.join(self.finishedTaskFolder, task)
+                write_json_from_df(path, df)
+                update_xlsx_file(path_xlsx, df)
+            if all(df['Finished'] == 1):  # move to finish folder
+                path_done = p_join(self.finished_task_folder, task)
                 shutil.move(path, path_done)
-    
-    def existTask(self, json_name):
-        fileList = []
-        folderList = [self.finishedTaskFolder, self.newTaskFolder]
+
+    def exist_task(self, json_name):
+        file_list = []
+        folder_list = [self.finished_task_folder, self.new_task_folder]
         endings = ['json', 'bak', 'delete']
-        for folder in folderList:
+        for folder in folder_list:
             for ending in endings:
-                fileList += self.getTaskList(folder=folder, ending=ending)
-                
-        existings = [json_name in file for file in fileList]
-        return any(existings)
-        
-    
-    def generateManualTasks(self):
-        manualXlsx = os.path.join(self.mainFolder, 'TaskList_manual.xlsx')
-        if os.path.isfile(manualXlsx):
-            lastModifiedTime = self.getFileLastModifiedTime(manualXlsx)
-            lastModifiedTimeStr = datetime.strftime(\
-                                    lastModifiedTime, "%Y%m%d_%H%M%S")
-            json_name =  'TaskList_'+lastModifiedTimeStr+'.json'
-            if self.existTask(json_name):# already created
+                file_list += self.get_task_list(folder=folder, ending=ending)
+
+        return any([json_name in file for file in file_list])
+
+    def generate_manual_tasks(self):
+        manual_xlsx = p_join(self.main_folder, 'TaskList_manual.xlsx')
+        if os.path.isfile(manual_xlsx):
+            last_modified_time = self.get_file_last_modified_time(manual_xlsx)
+            last_modified_time_str = datetime.strftime(last_modified_time, "%Y%m%d_%H%M%S")
+            json_name = 'TaskList_' + last_modified_time_str + '.json'
+            if self.exist_task(json_name):  # already created
                 return
-            newJsonName = os.path.join(self.newTaskFolder,json_name)
-            df = pd.read_excel(manualXlsx)
+            new_json_name = p_join(self.new_task_folder, json_name)
+            df = pd.read_excel(manual_xlsx)
             df = df.fillna('')
-            df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(getUUID)
-            writeJSON_from_df(newJsonName, df)
-    
-    def generateTasks(self):
-        self.lastModifiedTime = self.getFileLastModifiedTime()
-        lastModifiedTimeStr = datetime.strftime(\
-                                self.lastModifiedTime, "%Y%m%d_%H%M%S")
-        json_name = 'TaskList_'+lastModifiedTimeStr+'.json'
-        if self.existTask(json_name):# already created
+            df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(get_uuid)
+            write_json_from_df(new_json_name, df)
+
+    def generate_tasks(self):
+        self.last_modified_time = self.get_file_last_modified_time()
+        last_modified_time_str = datetime.strftime(self.last_modified_time, "%Y%m%d_%H%M%S")
+        json_name = 'TaskList_' + last_modified_time_str + '.json'
+        if self.exist_task(json_name):  # already created
             return
-        newJsonName = os.path.join(self.newTaskFolder, json_name)
-        modifiedTime = os.path.getmtime(self.taskFilePath)
-        parameterTable = pd.read_excel(self.taskFilePath,
-                                       sheet_name='ParameterRange')
-        parameterIdxs = list(range(0,5))+list(range(7,15+5))
-        parameterNames = list(parameterTable.columns)
-        parameterNames_Target = [parameterNames[i] for i in parameterIdxs]
-        numTotalTask = 1;
-        for name in parameterNames_Target:
-            vector = parameterTable.loc[:, name]
-            numNonNan = list(np.isnan(vector)).count(False)
-            numTotalTask *= numNonNan
-        
-        columns = ['Num'] + parameterNames_Target
-        vectorList = []
-        for name in parameterNames_Target:
-            vector = parameterTable.loc[:, name]
-            nonNanIdx = np.isnan(vector)
-            nonNanIdx = [not(i) for i in nonNanIdx]
+        new_json_name = p_join(self.new_task_folder, json_name)
+        modified_time = os.path.getmtime(self.task_file_path)
+        parameter_table = pd.read_excel(self.task_file_path, sheet_name='ParameterRange')
+        parameter_ids = list(range(0, 5)) + list(range(7, 15 + 5))
+        parameter_names = list(parameter_table.columns)
+        parameter_names_target = [parameter_names[i] for i in parameter_ids]
+        num_total_task = 1
+        for name in parameter_names_target:
+            vector = parameter_table.loc[:, name]
+            num_non_nan = list(np.isnan(vector)).count(False)
+            num_total_task *= num_non_nan
+
+        columns = ['Num'] + parameter_names_target
+        vector_list = []
+        for name in parameter_names_target:
+            vector = parameter_table.loc[:, name]
+            non_nan_idx = np.isnan(vector)
+            non_nan_idx = [not i for i in non_nan_idx]
             vector = [float(vector[i]) for i in range(len(vector))
-                            if nonNanIdx[i]]
-            vectorList.append(vector)
-        
-        combinations = list(prod(*vectorList))
-        combinations = [[i+1]+list(combinations[i]) 
-                            for i in range(len(combinations))]
-        taskTable = pd.DataFrame(data=combinations, columns=columns)
-        taskTable_old = pd.read_excel(self.taskFilePath, sheet_name='Sheet1')
-        columns_old = list(taskTable_old.columns)
+                      if non_nan_idx[i]]
+            vector_list.append(vector)
+
+        combinations = list(prod(*vector_list))
+        combinations = [[i + 1] + list(combinations[i]) for i in range(len(combinations))]
+        task_table = pd.DataFrame(data=combinations, columns=columns)
+        task_table_old = pd.read_excel(self.task_file_path, sheet_name='Sheet1')
+        columns_old = list(task_table_old.columns)
         for c in columns_old:
-            if c not in taskTable.columns:
-                taskTable[c] = ''
-        taskTable.loc[:, 'UUID'] = taskTable.loc[:, 'UUID'].apply(getUUID)
-        updateXlsxFile(self.taskFilePath, taskTable)
-        taskTable = pd.read_excel(self.taskFilePath, sheet_name = 'Sheet1')
-        newXlsxName = os.path.join(self.mainFolder,\
-                         'Output', 'TaskList_'+lastModifiedTimeStr+'.xlsx')
-        writeJSON_from_df(newJsonName, taskTable)
-        shutil.copyfile(self.taskFilePath, newXlsxName)
-        os.utime(self.taskFilePath, (modifiedTime, modifiedTime))
-        os.utime(newJsonName, (modifiedTime, modifiedTime))
-        os.utime(newXlsxName, (modifiedTime, modifiedTime))
+            if c not in task_table.columns:
+                task_table[c] = ''
+        task_table.loc[:, 'UUID'] = task_table.loc[:, 'UUID'].apply(get_uuid)
+        update_xlsx_file(self.task_file_path, task_table)
+        task_table = pd.read_excel(self.task_file_path, sheet_name='Sheet1')
+        new_xlsx_name = p_join(self.main_folder, 'Output', 'TaskList_' + last_modified_time_str + '.xlsx')
+        write_json_from_df(new_json_name, task_table)
+        shutil.copyfile(self.task_file_path, new_xlsx_name)
+        os.utime(self.task_file_path, (modified_time, modified_time))
+        os.utime(new_json_name, (modified_time, modified_time))
+        os.utime(new_xlsx_name, (modified_time, modified_time))
 
 
 if __name__ == '__main__':
     pass
-    

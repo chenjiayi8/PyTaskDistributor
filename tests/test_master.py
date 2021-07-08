@@ -6,32 +6,27 @@ Created on Fri Jun  4 13:21:05 2021
 @author: frank
 """
 
-import os
-from PyTaskDistributor.util.config import readConfig, getHostName
 from PyTaskDistributor.core.master import *
-import random
+from PyTaskDistributor.util.config import get_host_name, read_config
 
-config_path= os.path.join(os.getcwd(), 'config.txt')
+config_path = os.path.join(os.getcwd(), 'config.txt')
 
-config = readConfig(config_path)
-hostname = getHostName()
-setup = config[hostname] 
-#hostname = 'cmmb01';
-#setup['order'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
-#setup['delivery'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
-#setup['factory'] = '/home/frank/LocalWorkFolder/TranReNu/MC3DVersion3.3_Git/'        
+config = read_config(config_path)
+hostname = get_host_name()
+setup = config[hostname]
+# hostname = 'cmmb01';
+# setup['order'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
+# setup['delivery'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
+# setup['factory'] = '/home/frank/LocalWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 obj = Master(setup)
-obj.updateServerList(10000)
-#obj.removeFinishedTask()
-#obj.printProgress()
-#obj.main()
-#obj.generateTasks()
-#obj.updateServerList()
-#obj.updateTaskStatus()
+obj.update_server_list(10000)
+# obj.removeFinishedTask()
+# obj.printProgress()
+# obj.main()
+# obj.generateTasks()
+# obj.updateServerList()
+# obj.updateTaskStatus()
 #
-#cmd_tempate = "nohup matlab-R2016B -r 'D3Q7Initiator({});exit;' > {}"
-#inputs = ['1.0,86400.0,40.0,40.0,0.4,1000000.0,9.0,5.0,8.0,40.0,40.0,40.0,40.0,0.0',
+# cmd_tempate = "nohup matlab-R2016B -r 'D3Q7Initiator({});exit;' > {}"
+# inputs = ['1.0,86400.0,40.0,40.0,0.4,1000000.0,9.0,5.0,8.0,40.0,40.0,40.0,40.0,0.0',
 #          'Task-1.txt']
-
-
-
