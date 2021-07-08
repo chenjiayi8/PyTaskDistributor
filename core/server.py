@@ -34,6 +34,7 @@ from PyTaskDistributor.util.others import (get_file_suffix, get_latest_file_in_f
 
 class Server:
     def __init__(self, setup, debug=False):
+        self.print("Server {} started".format(setup['hostname']))
         self.setup = setup
         self.debug = debug
         self.CPU_max = float(setup['CPU_max']) * 100
@@ -585,7 +586,7 @@ class Server:
         copy_tree(source_folder, target_folder)
         # delivery everything excluding mat file
         self.delivery_task(target_folder, time_str)
-        # update finishedSessions will happen in onStartTask
+        # update finished sessions will happen in onStartTask
         # clean session folder
         self.clean_folder(source_folder, 'postprocess_task', delete=True)
 

@@ -28,6 +28,7 @@ from PyTaskDistributor.util.others import sleep_mins, update_xlsx_file, get_uuid
 
 class Master:
     def __init__(self, setup, fast_mode=False):
+        self.print("Master {} started".format(setup['hostname']))
         self.setup = setup
         self.default_folder = os.getcwd()
         self.fast_mode = fast_mode
@@ -40,7 +41,6 @@ class Master:
         self.monitor = Monitor(self)
         self.server_list = []
         self.msgs = []
-        pass
 
     def main(self):
         num_min = random.randint(3, 5)
@@ -70,8 +70,14 @@ class Master:
 
     def print_msgs(self):
         for msg in self.msgs:
-            print(msg)
-        self.msgs.clear()
+            self.print(msg)
+
+    @staticmethod
+    def print(msg):
+        time_prefix = datetime.strftime(datetime.now(), '%Y-%m-%d %H:%M:%S.%f')
+        time_prefix = time_prefix[:-3] + '$ '
+        msg = time_prefix + msg + '\n'
+        print(msg)
 
     def get_file_last_modified_time(self, file_path=None):
         if file_path is None:
@@ -148,15 +154,15 @@ class Master:
                 continue
 
             # assigned sessions but not running
-            if len(server['currentSessions']) > server['num_running']:
+            if len(server['current_sessions']) > server['num_running']:
                 skip_flag = True
                 msg_cause += 'Assigned sessions are not running\n'
             df_assigned = df[(df['HostName'] == server['name']) & (df['Finished'] != 1)]
 
             # assigned sessions but not received
             for idx in df_assigned.index:
-                if idx not in server['currentSessions']:
-                    finished_sessions = server['finishedSessions'].keys()
+                if idx not in server['current_sessions']:
+                    finished_sessions = server['finished_sessions'].keys()
                     idx_in_finished_sessions = [idx in s for s in finished_sessions]
                     if not any(idx_in_finished_sessions):
                         if not skip_flag:
@@ -209,7 +215,7 @@ class Master:
     def get_finished_sessions(self):
         finished_sessions = {}
         for server in self.server_list:
-            temp_dict = server['finishedSessions']
+            temp_dict = server['finished_sessions']
             for _, v in temp_dict.items():
                 v['HostName'] = server['name']
             finished_sessions.update(temp_dict)

@@ -27,7 +27,7 @@ if __name__ == '__main__':
     hostname = get_host_name()
     setup = config[hostname]
     server = Server(setup)
-    server.status_dict['currentSessions'] = manager.dict()
+    server.status_dict['current_sessions'] = manager.dict()
     d = {1: '1', '2': 2}
     #    obj1 = Session(server, 'abc', 3)
     #    obj2 = Session(server, 'cde',10)
@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
 #    for i in range(10):
 #        time.sleep(1)
-#        print(server.currentSessions)
+#        print(server.current_sessions)
 
 #    p1.join()
 #    p2.join()

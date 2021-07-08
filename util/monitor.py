@@ -76,8 +76,8 @@ class Monitor:
         assigned_sessions = []
         finished_sessions = []
         for server in self.master.server_list:
-            assigned_sessions += server['currentSessions']
-            finished_sessions += server['finishedSessions'].keys()
+            assigned_sessions += server['current_sessions']
+            finished_sessions += server['finished_sessions'].keys()
         for task in task_list:
             time_str = get_time_str(task)
             task_path = os.path.join(self.master.new_task_folder, task)
