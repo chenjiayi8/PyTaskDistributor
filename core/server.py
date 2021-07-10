@@ -98,7 +98,6 @@ class Server:
         msg = time_prefix + msg + '\n'
         print(msg)
 
-    @property
     def main(self):
         num_min = random.randint(2, 4)
         interval_seconds = 30
@@ -481,6 +480,7 @@ class Server:
             for k, s in sessions.items():
                 s.main()
             # go back to default_folder
+            self.print("{} sessions are running from this cycle".format(len(sessions)))
             os.chdir(self.default_folder)
 
     def kill_all_sessions(self):
@@ -515,6 +515,7 @@ class Server:
 
     def update_sessions_status(self):
         keys = list(self.sessions_dict.keys())
+        self.print("Update {} sessions status".format(len(keys)))
         for k in keys:
             s = self.sessions_dict[k]
             # check process status

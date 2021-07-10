@@ -71,6 +71,7 @@ class Master:
     def print_msgs(self):
         for msg in self.msgs:
             self.print(msg)
+        self.msgs.clear()
 
     @staticmethod
     def print(msg):

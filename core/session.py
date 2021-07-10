@@ -22,7 +22,7 @@ from os.path import basename, isdir, isfile, join as p_join
 import matlab.engine
 
 from PyTaskDistributor.util.json import read_json_to_dict
-from PyTaskDistributor.util.others import get_file_suffix, get_latest_file_in_folder, make_dirs
+from PyTaskDistributor.util.others import get_file_suffix, get_latest_file_in_folder, make_dirs, get_process_cpu
 
 
 class Session:
@@ -84,21 +84,24 @@ class Session:
     def __del__(self):
         if self.process is not None:
             self.process.terminate()
-            self.write_log("process terminated")
+            self.write_log("process for {} terminated".format(self.name))
             if self.eng is not None:
                 try:
                     self.eng.exit()
                     self.eng = None
                     self.pid = -1
-                    self.write_log("Eng exited")
+                    self.write_log("Eng for {} exited".format(self.name))
                 except:
-                    self.eng = None
+                    self.eng = None # garbage collection
+                    self.write_log("Fail to exit Eng for {} but Eng is assigned as None anyway".format(self.name))
                     pass
+            else:
+                self.write_log("Fail to exit Eng for {} because it is not initialised".format(self.name))
         if self.pid != -1:  # kill if necessary
             try:  # try to kill
                 exitcode = os.system("kill -9 {}".format(self.pid))
                 if exitcode == 0:
-                    self.write_log("kill zombie {} with pid {}".format(self.name, self.pid))
+                    self.write_log("kill {} with pid {}".format(self.name, self.pid))
                     self.pid = -1
                     self.eng = None  # garbage collection
                 else:
@@ -213,7 +216,17 @@ class Session:
                 return False  # fail fast
         return True
 
+    def has_low_cpu(self):
+        if self.pid == -1:
+            return True
+        if get_process_cpu(self.pid) < 10:
+            return True
+        else:
+            return False
+
     def has_finished(self):
+        if not self.has_low_cpu():
+            return False
         json_file = self.get_json_output()
         mat_file = self.get_mat_output()
         if json_file is None:
@@ -286,7 +299,9 @@ class Session:
         if len(target) == 0:
             target = 'run'
         self.process = Process(target=getattr(self, target))  # call function by string
+        self.write_log("Process to run Function {} of {} is created".format(target, self.name))
         self.process.start()
+        self.write_log("Function {} of {} is running in background".format(target, self.name))
 
     def run(self):
         try:
