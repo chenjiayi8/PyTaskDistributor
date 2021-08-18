@@ -66,7 +66,6 @@ class Server:
         self.status_names = ['CPU_total', 'MEM_total',
                              'CPU_matlab', 'MEM_matlab']
         self.status_record = np.zeros(len(self.status_names) + 1, dtype=float)
-        self.zombie_sessions = {}
         self.initialise()
 
     def initialise(self):
@@ -206,41 +205,6 @@ class Server:
             lambda x: 'matlab -mvminputpipe' in x.lower())]
         return df, df_matlab
 
-    #    def dealWithZombieSession(self, df_matlab):
-    #        zombieSessions_this = []
-    #        # find zombie sessions for this cycle
-    #        for i in range(len(df_matlab)):
-    #            if df_matlab.loc[i, 'CPU'] < 10:
-    #                pid = df_matlab.loc[i, 'pid']
-    #                zombieSessions_this.append(pid)
-    #                if pid not in self.zombieSessions:
-    #                    self.zombieSessions[pid]  = 1
-    #                else:
-    #                    self.zombieSessions[pid] += 1
-    #
-    #        # kill zombie sessions which marked continuously
-    #        pids = list(self.zombieSessions.keys())
-    #        for p in pids:
-    #            if p not in zombieSessions_this:
-    #                # remove sessions were zombie but not this cycle
-    #                del self.zombieSessions[p]
-    #            elif self.zombieSessions[p] > 30:#30*(1+randint(2,4)) == 120 mins
-    #                # kill sessions were zombie for 2 hours
-    #                try: #try to kill
-    #                    exitcode = os.system("kill -9 {}".format(p))
-    #                    if exitcode == 0:
-    #                        del self.zombieSessions[p]
-    #                        self.print("kill zombie {}".format(p))
-    #                    else:
-    #                        self.print("Cannot kill {}".format(p))
-    #                except (KeyboardInterrupt, SystemExit):
-    #                    raise
-    #                except:
-    #                    self.print ("Need assistance for kill session:\n {}"\
-    #                   .format(sys.exc_info()))
-    #                    traceBackObj = sys.exc_info()[2]
-    #                    traceback.print_tb(traceBackObj)
-
     def deal_with_zombie_sessions(self):
         keys = list(self.sessions_dict.keys())
         for key in keys:
@@ -253,12 +217,13 @@ class Server:
                 else:
                     session.zombieState = 0  # reset
 
-                if session.zombieState > 30:
-                    session.clean_workspace('being zombie')
-                    del self.sessions_dict[key]
                 if is_zombie_process(session.pid):
                     session.clean_workspace('being zombie')
-                    del self.sessions_dict[key]
+                    self.sessions_dict.pop(key, None)
+                if session.zombieState > 30:
+                    session.clean_workspace('being zombie')
+                    self.sessions_dict.pop(key, None)
+
 
     def update_server_status(self):
         df, df_matlab = self.get_processes()
@@ -616,6 +581,7 @@ class Server:
                 if session in self.sessions_dict:  # kill running session
                     s = self.sessions_dict[session]
                     s.clean_workspace("cleanTaskTrace")
+                    self.sessions_dict.pop(session, None)
                 else:
                     s = Session(self, session, None, time_str)
                 s.post_process()

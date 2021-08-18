@@ -85,19 +85,20 @@ class Session:
         if self.process is not None:
             self.process.terminate()
             self.write_log("process for {} terminated".format(self.name))
-            if self.eng is not None:
-                try:
-                    self.eng.exit()
-                    self.eng = None
-                    self.pid = -1
-                    self.write_log("Eng for {} exited".format(self.name))
-                except:
-                    self.eng = None # garbage collection
-                    self.write_log("Fail to exit Eng for {} but Eng is assigned as None anyway".format(self.name))
-                    pass
-            else:
-                self.write_log("Fail to exit Eng for {} because it is not initialised".format(self.name))
-        if self.pid != -1:  # kill if necessary
+#            if self.eng is not None:
+#                try:
+#                    self.write_log("Try to exit Eng for {} exited".format(self.name))
+#                    self.eng.exit()
+#                    self.eng = None
+#                    self.pid = -1
+#                    self.write_log("Eng for {} exited".format(self.name))
+#                except:
+#                    self.eng = None # garbage collection
+#                    self.write_log("Fail to exit Eng for {} but Eng is assigned as None anyway".format(self.name))
+#                    pass
+#            else:
+#                self.write_log("Fail to exit Eng for {} because it is not initialised".format(self.name))
+        if self.pid != -1:  # kill directly
             try:  # try to kill
                 exitcode = os.system("kill -9 {}".format(self.pid))
                 if exitcode == 0:
@@ -109,7 +110,8 @@ class Session:
             except (KeyboardInterrupt, SystemExit):
                 raise
             except:
-                self.write_log("Need assisstance for kill session:\n {}".format(sys.exc_info()))
+                self.write_log("Failed to kill session {} with pid {}, received message:\n {}".format(
+                        self.name, self.pid, sys.exc_info()))
                 trace_back_obj = sys.exc_info()[2]
                 traceback.print_tb(trace_back_obj)
 
@@ -127,16 +129,16 @@ class Session:
         try:
             self.eng = matlab.engine.start_matlab()
             self.pid = int(self.eng.eval("feature('getpid')"))
+            self.write_log("Creating matlab engine for {} {} done with pid {}".format(caller, self.name, self.pid))
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as e:
-            self.write_log("Need assistance for unexpected error:\n {}".format(sys.exc_info()))
+            self.write_log("Failed to create matlab engine with message:\n {}".format(sys.exc_info()))
             trace_back_obj = sys.exc_info()[2]
             traceback.print_tb(trace_back_obj)
             self.write_log(str(e))
             self.write_log(traceback.format_exc())
             self.server.deal_with_failed_session(self.name)
-        self.write_log("Creating matlab engine for {} {} done".format(caller, self.name))
 
     def get_simulation_output(self):
         os.chdir(self.factory_folder)
