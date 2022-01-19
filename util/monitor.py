@@ -83,6 +83,7 @@ class Monitor:
             task_path = os.path.join(self.master.new_task_folder, task)
             df = read_json_to_df(task_path)
             df = df.sort_values('Num')
+            df['UUID'] = df['UUID'].apply(str)
             temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
             index1 = ['-'.join(t) for t in temp]
             index2 = [time_str + '_' + '-'.join(t) for t in temp]

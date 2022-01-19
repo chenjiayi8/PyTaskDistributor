@@ -108,6 +108,7 @@ class Server:
             for i in range(num_interval):
                 self.record_status()
                 sleep_mins(interval_mins)
+                self.cleanSyncConflictState()
             self.write_server_status()
             need_assistance = False
         except (KeyboardInterrupt, SystemExit):
@@ -121,6 +122,7 @@ class Server:
         return need_assistance
 
     def on_interval(self):
+        self.manual_remove_task()
         task_list = self.get_task_list()
         clean_task = self.host_name + '_clean.json'
         purge_task = self.host_name + '_purge.json'
@@ -128,6 +130,7 @@ class Server:
         # reset everything in factory
         if purge_task in task_list:
             self.print("Resetting factory")
+            self.kill_all_sessions()
             self.purge_factory()
             self.reset_status_dict()
             self.update_server_status()
@@ -140,7 +143,10 @@ class Server:
         # clean previous task results
         if clean_task in task_list:
             self.print("Cleaning unfinished tasks")
+            self.kill_all_sessions()
             self.clean_unfinished_tasks()
+            self.reset_status_dict()
+            self.update_server_status()
             task_list.remove(clean_task)
             os.unlink(p_join(self.new_task_folder, clean_task))
 
@@ -173,7 +179,6 @@ class Server:
         # remove finished sessions from current sessions
         self.remove_finished_sessions()
         self.remove_finished_task()
-        self.manual_remove_task()
 
     def write_server_status(self):
         # calculate the average CPU/MEM percents and write
@@ -252,9 +257,9 @@ class Server:
 
     @staticmethod
     def not_clean_or_purge(task):  # skip these task for another server
-        if task.lower().endswith('_clean.json'):
+        if task.lower().endswith('clean.json'):
             return False
-        if task.lower().endswith('_purge.json'):
+        if task.lower().endswith('purge.json'):
             return False
         return True
 
@@ -325,8 +330,7 @@ class Server:
 
     def get_unfinished_sessions(self):
         output_folder = p_join(self.factory_folder, 'Output')
-        if not isdir(output_folder):
-            make_dirs(output_folder)
+        make_dirs(output_folder)
         unfinished_ss = os.listdir(output_folder)
         unfinished_ss = [s for s in unfinished_ss if s.startswith('Task-')]
         return unfinished_ss, output_folder
@@ -460,6 +464,7 @@ class Server:
             path = p_join(self.new_task_folder, task)
             df = read_json_to_df(path)
             df = df.sort_values('Num')
+            df['UUID'] = df['UUID'].apply(str)
             temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
             index = ['-'.join(t) for t in temp]
             if session in index:
@@ -520,7 +525,7 @@ class Server:
 
     def remove_finished_task(self):
         task_list = self.get_task_list(folder=self.finished_task_folder)
-        task_list += self.get_task_list(folder=self.finished_task_folder, ending=".bak")
+        task_list += self.get_task_list(folder=self.finished_task_folder, ending=".done")
         for task in task_list:
             self.clean_task_trace(task)
 
@@ -605,6 +610,7 @@ class Server:
             self.clean_folder(folder_path, 'cleanUnfinishedTasks', delete=True)
         self.current_sessions.clear()
         self.status_dict['current_sessions'].clear()
+        self.update_server_status()
 
     def clean_folder(self, folder_name, caller='', delete=False):
         if isdir(folder_name):
@@ -626,7 +632,17 @@ class Server:
         # purge=True will delete Output folder
         dirsync.sync(self.main_folder, self.factory_folder, 'sync',
                      create=True, exclude=self.excluded_folder, purge=purge)
+        make_dirs(p_join(self.factory_folder, 'Output'))
 
+    def cleanSyncConflictState(self):
+        states = [f for f in os.listdir(self.server_folder) if f.endswith(".json") if f.startswith(self.host_name)]
+        for s in states:
+            if 'sync-conflict' in s:
+                s_path = p_join(self.server_folder, s)
+                if isfile(s_path):
+                    os.unlink(s_path)
+    
+    
     def get_task_list(self, folder=None, ending=".json"):
         if folder is None:
             folder = self.new_task_folder
@@ -640,6 +656,7 @@ class Server:
         if isfile(input_path):
             df = read_json_to_df(input_path)
             df = df.sort_values('Num')
+            df['UUID'] = df['UUID'].apply(str)
             temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
             index = ['-'.join(t) for t in temp]
             df.index = index

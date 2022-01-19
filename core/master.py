@@ -14,7 +14,8 @@ import sys
 import traceback
 from datetime import datetime
 from itertools import product as prod
-from os.path import join as p_join
+from os.path import isfile, join as p_join
+from pathlib import Path
 
 from dateutil import parser
 import numpy as np
@@ -47,8 +48,9 @@ class Master:
         try:
             if self.last_modified_time != self.get_file_last_modified_time():
                 self.generate_tasks()
-                self.generate_manual_tasks()
             self.update_server_list()
+            self.generate_manual_tasks()
+            self.generate_purge_tasks()
             self.update_task_status()
             self.remove_finished_task()
             self.workload_balance()
@@ -92,9 +94,9 @@ class Master:
         task_list = [f for f in os.listdir(folder) if f.endswith(ending)]
 
         def not_clean_or_purge(task):  # skip these task for another server
-            if task.lower().endswith('_clean.json'):
+            if task.lower().endswith('clean.json'):
                 return False
-            if task.lower().endswith('_purge.json'):
+            if task.lower().endswith('purge.json'):
                 return False
             return True
 
@@ -108,7 +110,8 @@ class Master:
             try:
                 s_path = p_join(self.server_folder, s)
                 if 'sync-conflict' in s:
-                    os.unlink(s_path)
+                    if  isfile(s_path):
+                        os.unlink(s_path)
                 else:
                     s_json = read_json_to_dict(s_path)
                     s_time = parser.parse(s_json['updated_time'])
@@ -120,6 +123,7 @@ class Master:
                 pass
 
     def workload_balance(self):
+        num_default = 2
         task_list = self.get_task_list()
         for task in task_list:
             if 'sync-conflict' in task:  # conflict file from Syncthing
@@ -131,13 +135,14 @@ class Master:
         task_path = p_join(self.new_task_folder, task)
         df = read_json_to_df(task_path)
         df = df.sort_values('Num')
+        df['UUID'] = df['UUID'].apply(str)
         temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
         index = ['-'.join(t) for t in temp]
         df.index = index
         df = df.fillna('')
         fasted_flag = self.fast_mode
         # override fastmode to True for small task
-        if len(df) <= len(self.server_list) * 4:
+        if len(df) <= len(self.server_list) * num_default:
             fasted_flag = True
         num_server = len(self.server_list)
         for i in range(num_server):
@@ -173,7 +178,7 @@ class Master:
 
             if not skip_flag:
                 if int(server['num_running']) == 0:
-                    num_target = 4
+                    num_target = num_default
                 else:
                     cpu_available = server['CPU_max'] - server['CPU_total']
                     cpu_per_task = server['CPU_matlab'] / server['num_running']
@@ -182,8 +187,8 @@ class Master:
                     mem_per_task = server['MEM_matlab'] / server['num_running']
                     num_mem = math.floor(mem_available / mem_per_task)
                     num_target = min([num_cpu, num_mem])
-                    if num_target > 4:  # Max add 4 per cycle
-                        num_target = 4
+                    if num_target > num_default:  # Max add num_default per cycle
+                        num_target = num_default
                     if num_target < 0:
                         num_target = 0
                 # CPU/MEM limit
@@ -230,6 +235,7 @@ class Master:
     def read_task(path):
         df = read_json_to_df(path)
         df = df.sort_values('Num')
+        df['UUID'] = df['UUID'].apply(str)
         temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
         index = ['-'.join(t) for t in temp]
         df.index = index
@@ -265,8 +271,8 @@ class Master:
             if modified_flag:
                 write_json_from_df(path, df)
                 update_xlsx_file(path_xlsx, df)
-            if all(df['Finished'] == 1):  # rename to json.bak
-                path_done = p_join(self.finished_task_folder, task + '.bak')
+            if all(df['Finished'] == 1):  # rename to json.done
+                path_done = p_join(self.finished_task_folder, task + '.done')
                 shutil.move(path, path_done)
 
     def update_task_status(self):
@@ -293,21 +299,8 @@ class Master:
                 file_list += self.get_task_list(folder=folder, ending=ending)
 
         return any([json_name in file for file in file_list])
-
-    def generate_manual_tasks(self):
-        manual_xlsx = p_join(self.main_folder, 'TaskList_manual.xlsx')
-        if os.path.isfile(manual_xlsx):
-            last_modified_time = self.get_file_last_modified_time(manual_xlsx)
-            last_modified_time_str = datetime.strftime(last_modified_time, "%Y%m%d_%H%M%S")
-            json_name = 'TaskList_' + last_modified_time_str + '.json'
-            if self.exist_task(json_name):  # already created
-                return
-            new_json_name = p_join(self.new_task_folder, json_name)
-            df = pd.read_excel(manual_xlsx)
-            df = df.fillna('')
-            df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(get_uuid)
-            write_json_from_df(new_json_name, df)
-
+    
+    
     def generate_tasks(self):
         self.last_modified_time = self.get_file_last_modified_time()
         last_modified_time_str = datetime.strftime(self.last_modified_time, "%Y%m%d_%H%M%S")
@@ -353,6 +346,33 @@ class Master:
         os.utime(self.task_file_path, (modified_time, modified_time))
         os.utime(new_json_name, (modified_time, modified_time))
         os.utime(new_xlsx_name, (modified_time, modified_time))
+        
+
+    def generate_manual_tasks(self):
+        manual_xlsx = p_join(self.main_folder, 'TaskList_manual.xlsx')
+        if isfile(manual_xlsx):
+            print("Generating manual tasks")
+            last_modified_time = self.get_file_last_modified_time(manual_xlsx)
+            last_modified_time_str = datetime.strftime(last_modified_time, "%Y%m%d_%H%M%S")
+            json_name = 'TaskList_' + last_modified_time_str + '.json'
+            if self.exist_task(json_name):  # already created
+                return
+            new_json_name = p_join(self.new_task_folder, json_name)
+            df = pd.read_excel(manual_xlsx)
+            df = df.fillna('')
+            df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(get_uuid)
+            write_json_from_df(new_json_name, df)
+
+
+    def generate_purge_tasks(self):
+        purge_task = p_join(self.new_task_folder, 'purge.json')
+        if isfile(purge_task):
+            print("Generating purge tasks")
+            os.unlink(purge_task)
+            for server in self.server_list:
+                purge_server_path = p_join(self.new_task_folder, server['name']+'_purge.json')
+                Path(purge_server_path).touch()
+            
 
 
 if __name__ == '__main__':
