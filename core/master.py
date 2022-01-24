@@ -22,9 +22,12 @@ import numpy as np
 import pandas as pd
 
 from PyTaskDistributor.util.extract import extract_between
-from PyTaskDistributor.util.json import (read_json_to_df, read_json_to_dict, write_json_from_df)
+from PyTaskDistributor.util.json import (read_json_to_df, 
+                                 read_json_to_dict, write_json_from_df)
 from PyTaskDistributor.util.monitor import Monitor
-from PyTaskDistributor.util.others import sleep_mins, update_xlsx_file, get_uuid
+from PyTaskDistributor.util.others import (sleep_mins, update_xlsx_file,
+                               get_uuid, delete_file, send_email)
+
 
 
 class Master:
@@ -50,6 +53,7 @@ class Master:
                 self.generate_tasks()
             self.update_server_list()
             self.generate_manual_tasks()
+            self.generate_clean_tasks()
             self.generate_purge_tasks()
             self.update_task_status()
             self.remove_finished_task()
@@ -274,6 +278,7 @@ class Master:
             if all(df['Finished'] == 1):  # rename to json.done
                 path_done = p_join(self.finished_task_folder, task + '.done')
                 shutil.move(path, path_done)
+                send_email('Finished task', "{} is done".format(task))
 
     def update_task_status(self):
         task_list = self.get_task_list()
@@ -293,7 +298,7 @@ class Master:
     def exist_task(self, json_name):
         file_list = []
         folder_list = [self.finished_task_folder, self.new_task_folder]
-        endings = ['json', 'bak', 'delete']
+        endings = ['json', 'done', 'delete']
         for folder in folder_list:
             for ending in endings:
                 file_list += self.get_task_list(folder=folder, ending=ending)
@@ -347,6 +352,18 @@ class Master:
         os.utime(new_json_name, (modified_time, modified_time))
         os.utime(new_xlsx_name, (modified_time, modified_time))
         
+        
+    def removeResidualTasks(self, cleanOrPurgeTask):
+        remove_time = self.get_file_last_modified_time(cleanOrPurgeTask)
+        resident_tasks = self.get_task_list(self.new_task_folder)
+        for task in resident_tasks:
+            task_time_str = extract_between(task, 'TaskList_', '.')[0]
+            task_time = datetime.strptime(task_time_str, "%Y%m%d_%H%M%S")
+            if remove_time >= task_time: ## move old tasks to finished task folder
+                print("Deleting old task {}".format(task))
+                old_path = p_join(self.new_task_folder, task)
+                new_path = p_join(self.finished_task_folder, task+'.done')
+                shutil.move(old_path, new_path)
 
     def generate_manual_tasks(self):
         manual_xlsx = p_join(self.main_folder, 'TaskList_manual.xlsx')
@@ -363,12 +380,22 @@ class Master:
             df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(get_uuid)
             write_json_from_df(new_json_name, df)
 
+    def generate_clean_tasks(self):
+        clean_task = p_join(self.new_task_folder, 'clean.json')
+        if isfile(clean_task):
+            print("Generating clean tasks")
+            self.removeResidualTasks(clean_task)
+            delete_file(clean_task)     
+            for server in self.server_list:
+                clean_server_path = p_join(self.new_task_folder, server['name']+'_clean.json')
+                Path(clean_server_path).touch()
 
     def generate_purge_tasks(self):
         purge_task = p_join(self.new_task_folder, 'purge.json')
         if isfile(purge_task):
             print("Generating purge tasks")
-            os.unlink(purge_task)
+            self.removeResidualTasks(purge_task)
+            delete_file(purge_task)
             for server in self.server_list:
                 purge_server_path = p_join(self.new_task_folder, server['name']+'_purge.json')
                 Path(purge_server_path).touch()

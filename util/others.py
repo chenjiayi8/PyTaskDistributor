@@ -26,6 +26,9 @@ def make_dirs(folder):
     if not os.path.isdir(folder):
         os.makedirs(folder)
 
+def delete_file(path):
+    if os.path.isfile(path):
+        os.unlink(path)
 
 def sleep_mins(num_min):  # for KeyboardInterrupt
     for i in range(round(num_min * 60)):

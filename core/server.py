@@ -134,21 +134,22 @@ class Server:
             self.purge_factory()
             self.reset_status_dict()
             self.update_server_status()
-            task_list.remove(purge_task)
             os.unlink(p_join(self.new_task_folder, purge_task))
-            if clean_task in task_list:
-                task_list.remove(clean_task)
+            task_list.remove(purge_task)
+            if clean_task in task_list:# no need to clean anymore
                 os.unlink(p_join(self.new_task_folder, clean_task))
+                task_list.remove(clean_task)
 
         # clean previous task results
         if clean_task in task_list:
             self.print("Cleaning unfinished tasks")
             self.kill_all_sessions()
             self.clean_unfinished_tasks()
+            self.prepare_factory()
             self.reset_status_dict()
             self.update_server_status()
-            task_list.remove(clean_task)
             os.unlink(p_join(self.new_task_folder, clean_task))
+            task_list.remove(clean_task)
 
         task_list = list(filter(self.not_clean_or_purge, task_list))
 
@@ -423,7 +424,7 @@ class Server:
             if num_target < 0:
                 num_target = 0
 
-        self.print("Add {} sessions".format(num_target))
+        self.print("Add maximum {} sessions".format(num_target))
         if num_target == 0:
             return self.none("Zero target")
         if len(sessions) > num_target:
@@ -442,7 +443,6 @@ class Server:
             # record pid first
             for k, s in sessions.items():
                 s.create_matlab_eng()
-                #                s.input[1] = 10*60# debug
                 self.sessions_dict[k] = s
 
             # run the session
@@ -460,6 +460,7 @@ class Server:
 
     def get_finished_session_key(self, session):
         task_list = self.get_task_list()
+        task_list = list(filter(self.not_clean_or_purge, task_list))
         for task in task_list:
             path = p_join(self.new_task_folder, task)
             df = read_json_to_df(path)
@@ -525,6 +526,7 @@ class Server:
 
     def remove_finished_task(self):
         task_list = self.get_task_list(folder=self.finished_task_folder)
+        task_list = list(filter(self.not_clean_or_purge, task_list))
         task_list += self.get_task_list(folder=self.finished_task_folder, ending=".done")
         for task in task_list:
             self.clean_task_trace(task)
@@ -603,14 +605,13 @@ class Server:
                 del self.status_dict['finished_sessions'][key]
 
     def clean_unfinished_tasks(self):
-        self.prepare_factory()
         unfinished_sessions, output_folder = self.get_unfinished_sessions()
         for session in unfinished_sessions:
             folder_path = p_join(output_folder, session)
             self.clean_folder(folder_path, 'cleanUnfinishedTasks', delete=True)
         self.current_sessions.clear()
         self.status_dict['current_sessions'].clear()
-        self.update_server_status()
+
 
     def clean_folder(self, folder_name, caller='', delete=False):
         if isdir(folder_name):
