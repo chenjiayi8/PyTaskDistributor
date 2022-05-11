@@ -69,6 +69,8 @@ class Server:
         self.initialise()
 
     def initialise(self):
+        make_dirs(self.factory_folder)
+        make_dirs(self.delivery_folder)
         if isfile(self.status_file):
             # update config
             self.status_dict['name'] = self.host_name
@@ -151,7 +153,7 @@ class Server:
             os.unlink(p_join(self.new_task_folder, clean_task))
             task_list.remove(clean_task)
 
-        task_list = list(filter(self.not_clean_or_purge, task_list))
+        task_list = list(filter(self.validedTask, task_list))
 
         if len(task_list) > 0:
             task = random.choice(task_list)  # work on one task per cycle
@@ -257,17 +259,20 @@ class Server:
         self.status_dict['updated_time'] = datetime.now().isoformat()
 
     @staticmethod
-    def not_clean_or_purge(task):  # skip these task for another server
-        if task.lower().endswith('clean.json'):
+    def validedTask(task):  # skip these task
+        task_lower = task.lower()
+        if task_lower.endswith('clean.json'):
             return False
-        if task.lower().endswith('purge.json'):
+        if task_lower.endswith('purge.json'):
+            return False
+        if 'sync-conflict' in task_lower:
             return False
         return True
 
     def get_num_assigned(self):
         num_assigned = 0
         task_list = self.get_task_list()
-        task_list = list(filter(self.not_clean_or_purge, task_list))
+        task_list = list(filter(self.validedTask, task_list))
         for task in task_list:
             path = p_join(self.new_task_folder, task)
             df = read_json_to_df(path)
@@ -360,11 +365,19 @@ class Server:
 
     def create_sessions(self, df):
         unfinished_sessions, output_folder = self.get_unfinished_sessions()
-        input_columns = ('Num, totalTime, tauMin, tauMax, wcRatio, maxSD,'
-                         'kd1, kd2, kd3, kd4, kd5, A2, A3, A4, kg1, kg2, kg3,'
-                         'kg4, initialSaturation, UUID')
-        input_columns = input_columns.replace(' ', '')
-        input_columns = input_columns.split(',')
+#        input_columns = ('Num, totalTime, tauMin, tauMax, wcRatio, maxSD,'
+#                         'kd1, kd2, kd3, kd4, kd5, A2, A3, A4, kg1, kg2, kg3,'
+#                         'kg4, initialSaturation, UUID')
+#        input_columns = input_columns.replace(' ', '')
+#        input_columns = input_columns.split(',')
+        columns = list(df.columns)
+        input_columns = []
+        for c in columns:
+            if c.lower() != 'hostname':
+                input_columns.append(c)
+            else:
+                break
+            
         sessions = {}
         for i in range(len(df)):
             session = df.index[i]
@@ -460,7 +473,7 @@ class Server:
 
     def get_finished_session_key(self, session):
         task_list = self.get_task_list()
-        task_list = list(filter(self.not_clean_or_purge, task_list))
+        task_list = list(filter(self.validedTask, task_list))
         for task in task_list:
             path = p_join(self.new_task_folder, task)
             df = read_json_to_df(path)
@@ -526,7 +539,7 @@ class Server:
 
     def remove_finished_task(self):
         task_list = self.get_task_list(folder=self.finished_task_folder)
-        task_list = list(filter(self.not_clean_or_purge, task_list))
+        task_list = list(filter(self.validedTask, task_list))
         task_list += self.get_task_list(folder=self.finished_task_folder, ending=".done")
         for task in task_list:
             self.clean_task_trace(task)
@@ -548,7 +561,7 @@ class Server:
         self.delivery_folder_path = p_join(self.delivery_folder, 'Output', time_str)
         self.mat_folder_path = p_join(self.factory_folder, 'Output', time_str)
         self.task_time_str = time_str
-        make_dirs(self.delivery_folder_path)
+#        make_dirs(self.delivery_folder_path)
         make_dirs(self.mat_folder_path)
 
     def postprocess_task(self, output_folder, mat_folder_path, time_str, session):

@@ -20,10 +20,11 @@ setup['hostname'] = 'cmmb01';
 # setup['factory'] = '/home/frank/LocalWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 obj = Master(setup)
 obj.update_server_list(10000)
+obj.workload_balance()
 # obj.removeFinishedTask()
 # obj.printProgress()
-# obj.main()
-# obj.generateTasks()
+#obj.main()
+#obj.generate_tasks()
 # obj.updateServerList()
 # obj.updateTaskStatus()
 #

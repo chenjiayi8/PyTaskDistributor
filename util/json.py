@@ -6,12 +6,13 @@ Created on Tue Jun  8 12:16:55 2021
 @author: frank
 """
 
+import os
 import json
 import sys
 import traceback
 from collections import OrderedDict
 from json import JSONDecoder
-
+from datetime import datetime
 import pandas as pd
 
 custom_decoder = JSONDecoder(object_pairs_hook=OrderedDict)
@@ -28,6 +29,9 @@ def write_json_from_df(path, df):
                 .to_dict('list'))
     ordered_dict = OrderedDict((k, out_dict.get(k)) for k in df.columns)
     write_json_from_dict(path, ordered_dict)
+    m_time = datetime.fromtimestamp(os.path.getmtime(path))
+    now_time = datetime.now()
+    os.utime(path, times=(round(now_time.timestamp()), round(m_time.timestamp())))
 
 
 def read_json_to_df(path):

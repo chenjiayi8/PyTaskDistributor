@@ -26,7 +26,7 @@ from PyTaskDistributor.util.json import (read_json_to_df,
                                  read_json_to_dict, write_json_from_df)
 from PyTaskDistributor.util.monitor import Monitor
 from PyTaskDistributor.util.others import (sleep_mins, update_xlsx_file,
-                               get_uuid, delete_file, send_email)
+                               get_uuid, delete_file, send_email, make_dirs)
 
 
 
@@ -55,9 +55,10 @@ class Master:
             self.generate_manual_tasks()
             self.generate_clean_tasks()
             self.generate_purge_tasks()
-            self.update_task_status()
             self.remove_finished_task()
+            self.remove_aborted_task()
             self.workload_balance()
+            self.update_task_status()
             self.print_progress(num_min)
             self.print_msgs()
             sleep_mins(num_min)
@@ -97,14 +98,18 @@ class Master:
             folder = self.new_task_folder
         task_list = [f for f in os.listdir(folder) if f.endswith(ending)]
 
-        def not_clean_or_purge(task):  # skip these task for another server
-            if task.lower().endswith('clean.json'):
+        def validedTask(task):  # skip these task for another server
+            task_lower = task.lower()
+            if task_lower.endswith('clean.json'):
                 return False
-            if task.lower().endswith('purge.json'):
+            if task_lower.endswith('purge.json'):
+                return False
+            if 'sync-conflict' in task_lower:
+                delete_file(p_join(folder, task))
                 return False
             return True
 
-        task_list = list(filter(not_clean_or_purge, task_list))
+        task_list = list(filter(validedTask, task_list))
         return task_list
 
     def update_server_list(self, timeout_mins=30):
@@ -279,6 +284,17 @@ class Master:
                 path_done = p_join(self.finished_task_folder, task + '.done')
                 shutil.move(path, path_done)
                 send_email('Finished task', "{} is done".format(task))
+                
+    def remove_aborted_task(self):
+        task_list  = self.get_task_list(folder=self.finished_task_folder, ending='.done')
+        task_list += self.get_task_list(folder=self.finished_task_folder, ending='.delete')
+        for task in task_list:
+            task_time_str = extract_between(task, 'TaskList_', '.')[0]
+            json_name = 'TaskList_' + task_time_str + '.json'
+            path = p_join(self.new_task_folder, json_name)
+            if isfile(path):
+                delete_file(path)
+                self.msgs.append("Delete {} because it is aborted/finished.".format(json_name))
 
     def update_task_status(self):
         task_list = self.get_task_list()
@@ -315,18 +331,16 @@ class Master:
         new_json_name = p_join(self.new_task_folder, json_name)
         modified_time = os.path.getmtime(self.task_file_path)
         parameter_table = pd.read_excel(self.task_file_path, sheet_name='ParameterRange')
-        parameter_ids = list(range(0, 5)) + list(range(7, 15 + 5))
         parameter_names = list(parameter_table.columns)
-        parameter_names_target = [parameter_names[i] for i in parameter_ids]
         num_total_task = 1
-        for name in parameter_names_target:
+        for name in parameter_names:
             vector = parameter_table.loc[:, name]
             num_non_nan = list(np.isnan(vector)).count(False)
             num_total_task *= num_non_nan
 
-        columns = ['Num'] + parameter_names_target
+        columns = ['Num'] + parameter_names
         vector_list = []
-        for name in parameter_names_target:
+        for name in parameter_names:
             vector = parameter_table.loc[:, name]
             non_nan_idx = np.isnan(vector)
             non_nan_idx = [not i for i in non_nan_idx]
@@ -346,6 +360,8 @@ class Master:
         update_xlsx_file(self.task_file_path, task_table)
         task_table = pd.read_excel(self.task_file_path, sheet_name='Sheet1')
         new_xlsx_name = p_join(self.main_folder, 'Output', 'TaskList_' + last_modified_time_str + '.xlsx')
+        output_folder = p_join(self.main_folder, 'Output', 'TaskList_' + last_modified_time_str)
+        make_dirs(output_folder)
         write_json_from_df(new_json_name, task_table)
         shutil.copyfile(self.task_file_path, new_xlsx_name)
         os.utime(self.task_file_path, (modified_time, modified_time))
