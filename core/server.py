@@ -290,7 +290,7 @@ class Server:
                 key = self.task_time_str + '_' + session
                 if key not in self.status_dict['finished_sessions']:
                     mat_folder = p_join(self.mat_folder_path, session, 'data')
-                    mat_path = get_latest_file_in_folder(mat_folder)
+                    mat_path = get_latest_file_in_folder(mat_folder, '.mat')
                     if mat_path:
                         target_mat_paths.append(mat_path)
                         target_sessions.append(session)
@@ -384,7 +384,7 @@ class Server:
             if session in unfinished_sessions:  # ran before
                 if not self.is_running(session):  # not running now
                     mat_folder = p_join(output_folder, session, 'data')
-                    mat_path = get_latest_file_in_folder(mat_folder)
+                    mat_path = get_latest_file_in_folder(mat_folder, '.mat')
                     if mat_path:  # Progress is saved
                         sessions[session] = Session(self, session, mat_path)
                     else:  # Nothing is saved
@@ -504,8 +504,9 @@ class Server:
             s = self.sessions_dict[k]
             # check process status
             if k not in self.current_sessions:
-                self.status_dict['msg'].append(
-                    '{} is not in Processes'.format(k))
+                msg = '{} is not in Processes'.format(k)
+                if msg not in self.status_dict['msg']:
+                    self.status_dict['msg'].append(msg)
             else:
                 if not s.process.is_alive():
                     if s.process.exitcode != 0:

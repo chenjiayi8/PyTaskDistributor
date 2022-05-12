@@ -127,7 +127,7 @@ class Session:
             caller = 'new task'
         self.write_log("Creating matlab engine for {} {}".format(caller, self.name))
         try:
-            self.eng = matlab.engine.start_matlab()
+            self.eng = matlab.engine.start_matlab()#option: '-desktop'
             self.pid = int(self.eng.eval("feature('getpid')"))
             self.write_log("Creating matlab engine for {} {} done with pid {}".format(caller, self.name, self.pid))
         except (KeyboardInterrupt, SystemExit):
@@ -313,6 +313,7 @@ class Session:
             self.server.current_sessions[self.name] = self.output
             self.write_log("Finishing {}".format(self.name))
         except (KeyboardInterrupt, SystemExit):
+            self.clean_workspace('killed by user or at exit')
             raise
         except Exception as e:
             self.write_log("Need assistance for unexpected error:\n {}".format(sys.exc_info()))
