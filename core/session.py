@@ -22,7 +22,8 @@ from os.path import basename, isdir, isfile, join as p_join
 import matlab.engine
 
 from PyTaskDistributor.util.json import read_json_to_dict
-from PyTaskDistributor.util.others import get_file_suffix, get_latest_file_in_folder, make_dirs, get_process_cpu
+from PyTaskDistributor.util.others import (
+        get_file_suffix, get_latest_file_in_folder, make_dirs, get_process_cpu)
 
 
 class Session:
@@ -38,8 +39,10 @@ class Session:
         if timestr is None:
             self.mat_folder_path = server.mat_folder_path
         else:  # finished session from another task
-            self.mat_folder_path = p_join(self.factory_folder, 'Output', timestr)
-        self.logFile = p_join(self.factory_folder, 'Output', name, name + '.txt')
+            self.mat_folder_path = p_join(self.factory_folder,
+                                          'Output', timestr)
+        self.logFile = p_join(self.factory_folder, 'Output',
+                              name, name + '.txt')
         self.process = None
         self.pid = -1
         self.eng = None
@@ -68,15 +71,17 @@ class Session:
             if isfile(self.logFile):
                 with open(self.logFile, 'a+') as f:
                     f.write(msg)
-        except:
+        except Exception:
             pass
 
     def clean_workspace(self, caller=''):
         if not self.terminated:
             if len(caller) > 0:
-                self.write_log('clean_workspace called for {} because {}'.format(self.name, caller))
+                self.write_log('clean_workspace called for {} because {}'
+                               .format(self.name, caller))
             else:
-                self.write_log('clean_workspace called for {}'.format(self.name))
+                self.write_log('clean_workspace called for {}'
+                               .format(self.name))
 
             self.__del__()
             self.terminated = True
@@ -85,32 +90,22 @@ class Session:
         if self.process is not None:
             self.process.terminate()
             self.write_log("process for {} terminated".format(self.name))
-#            if self.eng is not None:
-#                try:
-#                    self.write_log("Try to exit Eng for {} exited".format(self.name))
-#                    self.eng.exit()
-#                    self.eng = None
-#                    self.pid = -1
-#                    self.write_log("Eng for {} exited".format(self.name))
-#                except:
-#                    self.eng = None # garbage collection
-#                    self.write_log("Fail to exit Eng for {} but Eng is assigned as None anyway".format(self.name))
-#                    pass
-#            else:
-#                self.write_log("Fail to exit Eng for {} because it is not initialised".format(self.name))
         if self.pid != -1:  # kill directly
             try:  # try to kill
                 exitcode = os.system("kill -9 {}".format(self.pid))
                 if exitcode == 0:
-                    self.write_log("kill {} with pid {}".format(self.name, self.pid))
+                    self.write_log("kill {} with pid {}".
+                                   format(self.name, self.pid))
                     self.pid = -1
                     self.eng = None  # garbage collection
                 else:
-                    self.write_log("Cannot kill {} with pid {}".format(self.name, self.pid))
+                    self.write_log("Cannot kill {} with pid {}"
+                                   .format(self.name, self.pid))
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except:
-                self.write_log("Failed to kill session {} with pid {}, received message:\n {}".format(
+            except Exception:
+                self.write_log(('Failed to kill session {} with pid {}, '
+                               'received message:\n {}').format(
                         self.name, self.pid, sys.exc_info()))
                 trace_back_obj = sys.exc_info()[2]
                 traceback.print_tb(trace_back_obj)
@@ -125,15 +120,18 @@ class Session:
             caller = 'old task'
         else:
             caller = 'new task'
-        self.write_log("Creating matlab engine for {} {}".format(caller, self.name))
+        self.write_log("Creating matlab engine for {} {}"
+                       .format(caller, self.name))
         try:
-            self.eng = matlab.engine.start_matlab()#option: '-desktop'
+            self.eng = matlab.engine.start_matlab()  # option: '-desktop'
             self.pid = int(self.eng.eval("feature('getpid')"))
-            self.write_log("Creating matlab engine for {} {} done with pid {}".format(caller, self.name, self.pid))
+            self.write_log("Creating matlab engine for {} {} done with pid {}"
+                           .format(caller, self.name, self.pid))
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as e:
-            self.write_log("Failed to create matlab engine with message:\n {}".format(sys.exc_info()))
+            self.write_log("Failed to create matlab engine with message:\n {}"
+                           .format(sys.exc_info()))
             trace_back_obj = sys.exc_info()[2]
             traceback.print_tb(trace_back_obj)
             self.write_log(str(e))
@@ -166,8 +164,9 @@ class Session:
             self.write_log("Finishing marking {}".format(self.name))
         except (KeyboardInterrupt, SystemExit):
             raise
-        except:
-            self.write_log("Need assistance for unexpected error:\n {}".format(sys.exc_info()))
+        except Exception:
+            self.write_log("Need assistance for unexpected error:\n {}"
+                           .format(sys.exc_info()))
             trace_back_obj = sys.exc_info()[2]
             traceback.print_tb(trace_back_obj)
             self.write_log(traceback.format_exc())
@@ -181,7 +180,8 @@ class Session:
         last_parts = [item.replace(target_folder, '') for item in item_list]
         for i in range(len(item_list)):
             item = item_list[i]
-            path_new = p_join(self.delivery_folder_path, base_name, last_parts[i])
+            path_new = p_join(self.delivery_folder_path,
+                              base_name, last_parts[i])
             if isdir(item):
                 make_dirs(path_new)
             if isfile(item):
@@ -251,7 +251,6 @@ class Session:
 
     def run_matlab_unfinished_task(self):
         time.sleep(random.randint(1, 30))
-        #        output, folderName = self.eng.MatlabToPyRunUnfinishedTasks(self.input, nargout=2)
         self.eng.MatlabToPyRunUnfinishedTasks(self.input, nargout=0)
         output = self.read_output()
         return output
@@ -294,16 +293,20 @@ class Session:
         self.write_log('Ready to delivery result')
         time.sleep(3)
         self.delivery_task(target_folder)
-        self.server.clean_folder(source_folder, 'postProcess in Session', delete=True)
+        self.server.clean_folder(source_folder, 'postProcess in Session',
+                                 delete=True)
         os.chdir(self.default_folder)
 
     def main(self, target=''):
         if len(target) == 0:
             target = 'run'
-        self.process = Process(target=getattr(self, target))  # call function by string
-        self.write_log("Process to run Function {} of {} is created".format(target, self.name))
+        # call function by string
+        self.process = Process(target=getattr(self, target))
+        self.write_log("Process to run Function {} of {} is created"
+                       .format(target, self.name))
         self.process.start()
-        self.write_log("Function {} of {} is running in background".format(target, self.name))
+        self.write_log("Function {} of {} is running in background"
+                       .format(target, self.name))
 
     def run(self):
         try:
@@ -316,7 +319,8 @@ class Session:
             self.clean_workspace('killed by user or at exit')
             raise
         except Exception as e:
-            self.write_log("Need assistance for unexpected error:\n {}".format(sys.exc_info()))
+            self.write_log("Need assistance for unexpected error:\n {}"
+                           .format(sys.exc_info()))
             trace_back_obj = sys.exc_info()[2]
             traceback.print_tb(trace_back_obj)
             self.write_log(str(e))

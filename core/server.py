@@ -27,9 +27,12 @@ import psutil
 
 from PyTaskDistributor.core.session import Session
 from PyTaskDistributor.util.extract import extract_between
-from PyTaskDistributor.util.json import (read_json_to_df, read_json_to_dict, write_json_from_dict)
-from PyTaskDistributor.util.others import (get_file_suffix, get_latest_file_in_folder, get_num_processor,
-                                           get_process_cpu, get_process_list, is_zombie_process, make_dirs, sleep_mins)
+from PyTaskDistributor.util.json import (
+    read_json_to_df, read_json_to_dict, write_json_from_dict)
+from PyTaskDistributor.util.others import (
+    get_file_suffix, get_latest_file_in_folder, get_num_processor,
+    get_process_cpu, get_process_list, is_zombie_process, make_dirs, sleep_mins
+    )
 
 
 class Server:
@@ -115,7 +118,7 @@ class Server:
             need_assistance = False
         except (KeyboardInterrupt, SystemExit):
             raise
-        except:
+        except Exception:
             self.print("Need assistance for unexpected error:\n {}"
                        .format(sys.exc_info()))
             trace_back_obj = sys.exc_info()[2]
@@ -138,7 +141,7 @@ class Server:
             self.update_server_status()
             os.unlink(p_join(self.new_task_folder, purge_task))
             task_list.remove(purge_task)
-            if clean_task in task_list:# no need to clean anymore
+            if clean_task in task_list:  # no need to clean anymore
                 os.unlink(p_join(self.new_task_folder, clean_task))
                 task_list.remove(clean_task)
 
@@ -232,10 +235,10 @@ class Server:
                     session.clean_workspace('being zombie')
                     self.sessions_dict.pop(key, None)
 
-
     def update_server_status(self):
         df, df_matlab = self.get_processes()
-        self.status_dict['CPU_total'] = round(psutil.cpu_percent(interval=1), 2)
+        self.status_dict['CPU_total'] = round(psutil.cpu_percent(interval=1),
+                                              2)
         self.status_dict['MEM_total'] = round(sum(df['Mem']), 2)
         self.status_dict['DISK_total'] = self.get_disk_usage_percent()
         self.status_dict['num_assigned'] = self.get_num_assigned()
@@ -295,7 +298,8 @@ class Server:
                         target_mat_paths.append(mat_path)
                         target_sessions.append(session)
                     else:
-                        log_file = p_join(self.mat_folder_path, session, session + '.txt')
+                        log_file = p_join(self.mat_folder_path,
+                                          session, session + '.txt')
                         with open(log_file, 'rt') as f:
                             lines = f.read().splitlines()
                             lines = lines[1:]
@@ -377,7 +381,7 @@ class Server:
                 input_columns.append(c)
             else:
                 break
-            
+
         sessions = {}
         for i in range(len(df)):
             session = df.index[i]
@@ -390,16 +394,19 @@ class Server:
                     else:  # Nothing is saved
                         _input = list(df.loc[session, input_columns])
                         # float input except for the last parameter uuid
-                        _input = [float(_input[i]) if i < len(_input) - 1 else _input[i] for i in range(len(_input))]
+                        _input = [float(_input[i]) if i < len(_input) - 1
+                                  else _input[i] for i in range(len(_input))]
                         sessions[session] = Session(self, session, _input)
             else:  # new session
                 _input = list(df.loc[session, input_columns])
-                _input = [float(_input[i]) if i < len(_input) - 1 else _input[i] for i in range(len(_input))]
+                _input = [float(_input[i]) if i < len(_input) -
+                          1 else _input[i] for i in range(len(_input))]
                 sessions[session] = Session(self, session, _input)
         return sessions
 
     def deal_with_failed_session(self, name):
-        self.status_dict['msg'].append('{} failed on {}'.format(name, datetime.now()))
+        self.status_dict['msg'].append(
+            '{} failed on {}'.format(name, datetime.now()))
         if name in self.status_dict['current_sessions']:
             self.status_dict['current_sessions'].remove(name)
         if name in self.current_sessions:
@@ -462,7 +469,9 @@ class Server:
             for k, s in sessions.items():
                 s.main()
             # go back to default_folder
-            self.print("{} sessions are running from this cycle".format(len(sessions)))
+            self.print(
+                "{} sessions are running from this cycle"
+                .format(len(sessions)))
             os.chdir(self.default_folder)
 
     def kill_all_sessions(self):
@@ -479,7 +488,8 @@ class Server:
             df = read_json_to_df(path)
             df = df.sort_values('Num')
             df['UUID'] = df['UUID'].apply(str)
-            temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
+            temp = list(
+                zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
             index = ['-'.join(t) for t in temp]
             if session in index:
                 time_str = self.get_time_str(task)
@@ -490,7 +500,8 @@ class Server:
     def remove_finished_sessions(self):
         sessions = list(self.status_dict['finished_sessions'].keys())
         for session in sessions:
-            underline_positions = [i for i, ltr in enumerate(session) if ltr == '_']
+            underline_positions = [
+                i for i, ltr in enumerate(session) if ltr == '_']
             key = session[underline_positions[1] + 1:]
             if key in self.status_dict['current_sessions']:
                 self.status_dict['current_sessions'].remove(key)
@@ -512,7 +523,8 @@ class Server:
                     if s.process.exitcode != 0:
                         time_str = datetime.now().isoformat()
                         self.status_dict['msg'].append(
-                            '{} {} is exited with exitcode {}\n'.format(time_str, k, s.process.exitcode))
+                            '{} {} is exited with exitcode {}\n'
+                            .format(time_str, k, s.process.exitcode))
                     if k in self.current_sessions:
                         del self.current_sessions[k]
                     self.sessions_dict[k].clean_workspace('exiting with error')
@@ -533,7 +545,7 @@ class Server:
                 if k in self.status_dict['current_sessions']:
                     self.status_dict['current_sessions'].remove(k)
                 if k in self.sessions_dict:
-                    #                    self.print("Will delete {} because of finished".format(k))
+                    # delete session because of finished
                     self.sessions_dict[k].clean_workspace('finished')
                     self.sessions_dict[k].post_process()
                     del self.sessions_dict[k]
@@ -541,12 +553,14 @@ class Server:
     def remove_finished_task(self):
         task_list = self.get_task_list(folder=self.finished_task_folder)
         task_list = list(filter(self.validedTask, task_list))
-        task_list += self.get_task_list(folder=self.finished_task_folder, ending=".done")
+        task_list += self.get_task_list(
+            folder=self.finished_task_folder, ending=".done")
         for task in task_list:
             self.clean_task_trace(task)
 
     def manual_remove_task(self):
-        task_list = self.get_task_list(folder=self.finished_task_folder, ending=".delete")
+        task_list = self.get_task_list(
+            folder=self.finished_task_folder, ending=".delete")
         for task in task_list:
             time_str = self.get_time_str(task)
             task_folder = p_join(self.factory_folder, 'Output', time_str)
@@ -559,13 +573,15 @@ class Server:
 
     def update_folder_paths(self, task):
         time_str = self.get_time_str(task)
-        self.delivery_folder_path = p_join(self.delivery_folder, 'Output', time_str)
+        self.delivery_folder_path = p_join(
+            self.delivery_folder, 'Output', time_str)
         self.mat_folder_path = p_join(self.factory_folder, 'Output', time_str)
         self.task_time_str = time_str
 #        make_dirs(self.delivery_folder_path)
         make_dirs(self.mat_folder_path)
 
-    def postprocess_task(self, output_folder, mat_folder_path, time_str, session):
+    def postprocess_task(self, output_folder,
+                         mat_folder_path, time_str, session):
         # copy folder
         source_folder = p_join(output_folder, session)
         target_folder = p_join(mat_folder_path, session)
@@ -626,7 +642,6 @@ class Server:
         self.current_sessions.clear()
         self.status_dict['current_sessions'].clear()
 
-
     def clean_folder(self, folder_name, caller='', delete=False):
         if isdir(folder_name):
             # remove all the content recursively
@@ -650,14 +665,14 @@ class Server:
         make_dirs(p_join(self.factory_folder, 'Output'))
 
     def cleanSyncConflictState(self):
-        states = [f for f in os.listdir(self.server_folder) if f.endswith(".json") if f.startswith(self.host_name)]
+        states = [f for f in os.listdir(self.server_folder) if f.endswith(
+            ".json") if f.startswith(self.host_name)]
         for s in states:
             if 'sync-conflict' in s:
                 s_path = p_join(self.server_folder, s)
                 if isfile(s_path):
                     os.unlink(s_path)
-    
-    
+
     def get_task_list(self, folder=None, ending=".json"):
         if folder is None:
             folder = self.new_task_folder
@@ -672,7 +687,8 @@ class Server:
             df = read_json_to_df(input_path)
             df = df.sort_values('Num')
             df['UUID'] = df['UUID'].apply(str)
-            temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
+            temp = list(
+                zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
             index = ['-'.join(t) for t in temp]
             df.index = index
             df = df.fillna('')

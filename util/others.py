@@ -26,9 +26,11 @@ def make_dirs(folder):
     if not os.path.isdir(folder):
         os.makedirs(folder)
 
+
 def delete_file(path):
     if os.path.isfile(path):
         os.unlink(path)
+
 
 def sleep_mins(num_min):  # for KeyboardInterrupt
     for i in range(round(num_min * 60)):
@@ -46,7 +48,8 @@ def get_latest_file_in_folder(folder, ending=''):
     if not os.path.isdir(folder):
         return None
     file_list = os.listdir(folder)
-    path_list = [os.path.join(folder, file) for file in file_list if file.endswith(ending)]
+    path_list = [os.path.join(folder, file)
+                 for file in file_list if file.endswith(ending)]
     path_list_file = list(filter(os.path.isfile, path_list))
     if len(path_list_file) == 0:
         return None
@@ -74,7 +77,8 @@ def update_xlsx_file(path_xlsx, df, sheet_name='Sheet1'):
         writer.book = book
         writer.sheets = {ws.title: ws for ws in book.worksheets}
         empty_sheet_exclude_headers(writer.book[sheet_name])
-        df.to_excel(writer, sheet_name=sheet_name, startrow=1, header=False, index=False)
+        df.to_excel(writer, sheet_name=sheet_name,
+                    startrow=1, header=False, index=False)
         writer.save()
 
 
@@ -98,7 +102,8 @@ def get_process_list():
             cmdline = ' '.join(proc.cmdline())
             data.append([proc.pid, proc.username(), proc.name(),
                          0, proc.memory_percent(), cmdline])
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        except (psutil.NoSuchProcess, psutil.AccessDenied,
+                psutil.ZombieProcess):
             pass
     return pd.DataFrame(data=data, columns=columns)
 
@@ -110,18 +115,19 @@ def get_num_processor():
 def is_zombie_process(pid):
     try:
         return psutil.Process(pid).status().lower() == 'zombie'
-    except:
+    except Exception:
         return True
 
 
 def get_process_cpu(pid):
     try:
         return psutil.Process(pid).cpu_percent(interval=1)
-    except:
+    except Exception:
         return 0.0
 
 
-def send_email(subject, content, receiver="j.chen-2@tudelft.nl", image_path=None):
+def send_email(subject, content, receiver="j.chen-2@tudelft.nl",
+               image_path=None):
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.image import MIMEImage
