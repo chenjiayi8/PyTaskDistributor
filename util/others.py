@@ -13,6 +13,44 @@ import uuid
 import pandas as pd
 import psutil
 from openpyxl import load_workbook
+import importlib
+
+
+def getLibTrackingObj():
+    libNames = ['master', 'server']
+    importedLibs = {}
+    for name in libNames:
+        importedLibs[name] = {
+                'path': './PyTaskDistributor/core/{}.py'.format(name),
+                'lastModifiedTime': 0,
+                'obj': importlib.import_module(
+                        'PyTaskDistributor.core.{}'.format(name))
+                }
+
+    for name, lib in importedLibs.items():
+        importedLibs[name]['lastModifiedTime'] =\
+            os.path.getmtime(importedLibs[name]['path'])
+    return importedLibs
+
+
+def importLatestLib(importedLibs):
+    for name, lib in importedLibs.items():
+        newModifiedTime = os.path.getmtime(importedLibs[name]['path'])
+        if importedLibs[name]['lastModifiedTime'] != newModifiedTime:
+            importlib.reload(importedLibs[name]['obj'])
+            print('Module ' + ucword(name) + ' is reloaded')
+            importedLibs[name]['lastModifiedTime'] = newModifiedTime
+    return importedLibs
+
+
+def ucword(word=None):
+    if word is not None:
+        length = len(word)
+        if length > 0:
+            temp = word[0].upper()
+            temp += word[1:length].lower()
+            return temp
+    return word
 
 
 def get_uuid(_):
