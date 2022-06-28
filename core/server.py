@@ -15,7 +15,7 @@ import traceback
 from collections import OrderedDict
 # import time
 from datetime import datetime
-from distutils.dir_util import copy_tree
+#from distutils.dir_util import copy_tree
 from glob import glob
 from multiprocessing import Manager
 from os.path import isdir, isfile, join as p_join
@@ -176,6 +176,8 @@ class Server:
         self.update_sessions_status()
 
     def on_start_task(self):
+        # comment out due to debug
+        return
         if int(self.status_dict['num_running']) == 0:
             self.prepare_factory()
         sessions = self.get_finished_sessions()
@@ -331,6 +333,9 @@ class Server:
             sessions = os.listdir(self.mat_folder_path)
             finished_sessions = []
             for session in sessions:
+                if not isfile(p_join(self.mat_folder_path, session,
+                                     'data', 'final.mat')):
+                    continue
                 key = self.task_time_str + '_' + session
                 if key not in self.status_dict['finished_sessions']:
                     finished_sessions.append(session)
@@ -345,11 +350,35 @@ class Server:
         unfinished_ss = [s for s in unfinished_ss if s.startswith('Task-')]
         return unfinished_ss, output_folder
 
+    def get_unfinished_mats(self, df):
+        unfinished_mats = {}
+        output_folders = [p_join(self.factory_folder, 'Output'),
+                          self.mat_folder_path]
+        for folder in output_folders:
+            make_dirs(folder)
+            sessions = os.listdir(folder)
+            sessions = [s for s in sessions if s.startswith('Task-')]
+            sessions = [s for s in sessions if s in df.index]
+            for s in sessions:
+                data_folder = p_join(folder, s, 'data')
+                if not isfile(p_join(data_folder, 'final.mat')):
+                    latest = get_latest_file_in_folder(data_folder, '.mat')
+                    if latest is None:
+                        continue
+                    if s not in unfinished_mats:
+                        unfinished_mats[s] = latest
+                    else:
+                        if os.path.getmtime(latest) > \
+                           os.path.getmtime(unfinished_mats[s]):
+                            unfinished_mats[s] = latest
+
+        return unfinished_mats
+
     def remove_finished_inputs(self, df):
         if len(df) == 0:
             return df
         make_dirs(self.mat_folder_path)  # create if doest not exist
-        finished_sessions = os.listdir(self.mat_folder_path)
+        finished_sessions = self.get_finished_sessions()
         unwanted_inputs = []
         for session in finished_sessions:
             if session in df.index:
@@ -368,12 +397,7 @@ class Server:
                 return True
 
     def create_sessions(self, df):
-        unfinished_sessions, output_folder = self.get_unfinished_sessions()
-#        input_columns = ('Num, totalTime, tauMin, tauMax, wcRatio, maxSD,'
-#                         'kd1, kd2, kd3, kd4, kd5, A2, A3, A4, kg1, kg2, kg3,'
-#                         'kg4, initialSaturation, UUID')
-#        input_columns = input_columns.replace(' ', '')
-#        input_columns = input_columns.split(',')
+        unfinished_mats = self.get_unfinished_mats(df)
         columns = list(df.columns)
         input_columns = []
         for c in columns:
@@ -382,25 +406,25 @@ class Server:
             else:
                 break
 
+        def get_input(_input):
+            _input = list(_input)
+            _input = [float(_input[i]) if i < len(_input) - 1
+                      else _input[i] for i in range(len(_input))]
+            return _input
+
         sessions = {}
         for i in range(len(df)):
             session = df.index[i]
-            if session in unfinished_sessions:  # ran before
+            if session in unfinished_mats:  # ran before
                 if not self.is_running(session):  # not running now
-                    mat_folder = p_join(output_folder, session, 'data')
-                    mat_path = get_latest_file_in_folder(mat_folder, '.mat')
+                    mat_path = unfinished_mats[session]
                     if mat_path:  # Progress is saved
                         sessions[session] = Session(self, session, mat_path)
                     else:  # Nothing is saved
-                        _input = list(df.loc[session, input_columns])
-                        # float input except for the last parameter uuid
-                        _input = [float(_input[i]) if i < len(_input) - 1
-                                  else _input[i] for i in range(len(_input))]
+                        _input = get_input(df.loc[session, input_columns])
                         sessions[session] = Session(self, session, _input)
             else:  # new session
-                _input = list(df.loc[session, input_columns])
-                _input = [float(_input[i]) if i < len(_input) -
-                          1 else _input[i] for i in range(len(_input))]
+                _input = get_input(df.loc[session, input_columns])
                 sessions[session] = Session(self, session, _input)
         return sessions
 
@@ -579,19 +603,6 @@ class Server:
         self.task_time_str = time_str
 #        make_dirs(self.delivery_folder_path)
         make_dirs(self.mat_folder_path)
-
-    def postprocess_task(self, output_folder,
-                         mat_folder_path, time_str, session):
-        # copy folder
-        source_folder = p_join(output_folder, session)
-        target_folder = p_join(mat_folder_path, session)
-        make_dirs(target_folder)
-        copy_tree(source_folder, target_folder)
-        # delivery everything excluding mat file
-        self.delivery_task(target_folder, time_str)
-        # update finished sessions will happen in onStartTask
-        # clean session folder
-        self.clean_folder(source_folder, 'postprocess_task', delete=True)
 
     def delivery_task(self, target_folder, time_str):
         target_folder = os.path.normpath(target_folder)

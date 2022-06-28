@@ -15,7 +15,7 @@ hostname = get_host_name()
 setup = config[hostname]
 setup['hostname'] = 'cmmb01'
 obj = Server(setup, debug=True)
-obj.purge_factory()
+#obj.purge_factory()
 obj.main()
 # obj.status_dict['CPU_total'] = 50.0
 # obj.status_dict['MEM_total'] = 50.0

@@ -379,6 +379,18 @@ class Master:
 
         return any([json_name in file for file in file_list])
 
+    def get_exist_task_path(self, json_name):
+        path_list = []
+        folder_list = [self.finished_task_folder, self.new_task_folder]
+        endings = ['json', 'done', 'delete']
+        for folder in folder_list:
+            for ending in endings:
+                file_list = self.get_task_list(folder=folder, ending=ending)
+                path_list += [p_join(folder, file) for file in file_list
+                              if json_name in file]
+
+        return path_list
+
     def generate_tasks(self):
         self.last_modified_time = self.get_file_last_modified_time()
         last_modified_time_str = datetime.strftime(
@@ -445,20 +457,32 @@ class Master:
                 shutil.move(old_path, new_path)
 
     def generate_manual_tasks(self):
-        manual_xlsx = p_join(self.main_folder, 'TaskList_manual.xlsx')
+        manual_folder = p_join(self.main_folder, 'ManualTasks')
+        manual_xlsx = p_join(manual_folder, 'TaskList_manual.xlsx')
         if isfile(manual_xlsx):
             last_modified_time = self.get_file_last_modified_time(manual_xlsx)
             last_modified_time_str = datetime.strftime(
                 last_modified_time, "%Y%m%d_%H%M%S")
             json_name = 'TaskList_' + last_modified_time_str + '.json'
-            if self.exist_task(json_name):  # already created
-                return
-            print("Generating manual tasks")
-            new_json_name = p_join(self.new_task_folder, json_name)
-            df = pd.read_excel(manual_xlsx)
-            df = df.fillna('')
-            df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(get_uuid)
-            write_json_from_df(new_json_name, df)
+            if not self.exist_task(json_name):  # already created
+                print("Generating manual tasks")
+                new_json_name = p_join(self.new_task_folder, json_name)
+                df = pd.read_excel(manual_xlsx)
+                df = df.fillna('')
+                df.loc[:, 'UUID'] = df.loc[:, 'UUID'].apply(get_uuid)
+                write_json_from_df(new_json_name, df)
+
+        manual_jsons = self.get_task_list(manual_folder)
+        for task in manual_jsons:
+            exist_paths = self.get_exist_task_path(task)
+            for path in exist_paths:
+                delete_file(path)  # delete exist task
+            task_path = p_join(manual_folder, task)
+            df = read_json_to_df(task_path)
+            df['Finished'] = 0  # reset task status
+            task_path_new = p_join(self.new_task_folder, task)
+            write_json_from_df(task_path_new, df)     # create new task
+            delete_file(p_join(manual_folder, task))  # delete manual task
 
     def generate_clean_tasks(self):
         clean_task = p_join(self.new_task_folder, 'clean.json')
