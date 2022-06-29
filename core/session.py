@@ -60,12 +60,14 @@ class Session:
     def initialise(self):
         make_dirs(self.working_folder)
         self.create_log_file()
-        self.write_log("Session {} initialised".format(self.name))
+        self.write_log("Session {} initialised at Server {}".format(self.name,
+                       self.server.host_name))
 
     def write_log(self, msg):
         time_prefix = datetime.strftime(datetime.now(), '%Y-%m-%d %H:%M:%S.%f')
         time_prefix = time_prefix[:-3] + '$ '
-        msg = time_prefix + msg + '\n'
+        platform_prefix = 'Python: '
+        msg = time_prefix + platform_prefix + msg + '\n'
         print(msg)
         try:
             if isfile(self.logFile):
@@ -113,7 +115,7 @@ class Session:
         if self.name in self.server.current_sessions:
             del self.server.current_sessions[self.name]
 
-    def create_matlab_eng(self):
+    def create_matlab_eng(self, option=None):
         os.chdir(self.factory_folder)
         self.initialise()
         if type(self.input) is str:
@@ -123,7 +125,11 @@ class Session:
         self.write_log("Creating matlab engine for {} {}"
                        .format(caller, self.name))
         try:
-            self.eng = matlab.engine.start_matlab()  # option: '-desktop'
+            if option is None:
+                self.eng = matlab.engine.start_matlab()  # option: '-desktop'
+            else:
+                self.eng = matlab.engine.start_matlab(option)
+
             self.pid = int(self.eng.eval("feature('getpid')"))
             self.write_log("Creating matlab engine for {} {} done with pid {}"
                            .format(caller, self.name, self.pid))
@@ -173,6 +179,7 @@ class Session:
             self.server.deal_with_failed_session(self.name)
 
     def delivery_task(self, target_folder):
+        self.write_log("delivery_task started for {}".format(self.name))
         target_folder = os.path.normpath(target_folder)
         base_name = basename(target_folder)
         target_folder += os.path.sep
@@ -187,6 +194,7 @@ class Session:
             if isfile(item):
                 if get_file_suffix(item).lower() != '.mat':
                     shutil.copyfile(item, path_new)
+        self.write_log("delivery_task finished for {}".format(self.name))
 
     def get_json_output(self):
         data_folder = p_join(self.working_folder, 'data')
@@ -251,18 +259,24 @@ class Session:
 
     def run_matlab_unfinished_task(self):
         time.sleep(random.randint(1, 30))
-        self.eng.MatlabToPyRunUnfinishedTasks(self.input, nargout=0)
+        self.write_log("run_matlab_unfinished_task with input {}"
+                       .format(self.input))
+        self.eng.MatlabToPyRunUnfinishedTasks([self.input, self.logFile], nargout=0)
+        self.write_log("run_matlab_unfinished_task finished")
         output = self.read_output()
         return output
 
     def run_matlab_new_task(self):
+        self.write_log("run_matlab_new_task with input {}".format(self.input))
         self.eng.MatlabToPyRunNewTasks(self.input, nargout=0)
+        self.write_log("run_matlab_new_task finished")
         output = self.read_output()
         return output
 
     def run_matlab_task(self):
         os.chdir(self.factory_folder)
         input_type = type(self.input)
+        self.write_log("run_matlab_task for {}".format(self.name))
         if input_type is str:
             output = self.run_matlab_unfinished_task()
         else:
@@ -285,6 +299,7 @@ class Session:
         self.output = output
 
     def post_process(self):
+        self.write_log("post_process started for {}".format(self.name))
         target_folder = p_join(self.mat_folder_path, self.name)
         source_folder = p_join(self.factory_folder, 'Output', self.name)
         # copy simulation results to task result folder
@@ -296,6 +311,7 @@ class Session:
         self.server.clean_folder(source_folder, 'postProcess in Session',
                                  delete=True)
         os.chdir(self.default_folder)
+        self.write_log("post_process finished for {}".format(self.name))
 
     def main(self, target=''):
         if len(target) == 0:

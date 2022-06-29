@@ -482,6 +482,8 @@ class Master:
             df['Finished'] = 0  # reset task status
             task_path_new = p_join(self.new_task_folder, task)
             write_json_from_df(task_path_new, df)     # create new task
+            path_xlsx = p_join(self.main_folder, 'Output', task[:-5] + '.xlsx')
+            update_xlsx_file(path_xlsx, df)
             delete_file(p_join(manual_folder, task))  # delete manual task
 
     def generate_clean_tasks(self):

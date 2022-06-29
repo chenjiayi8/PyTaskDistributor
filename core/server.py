@@ -72,6 +72,7 @@ class Server:
         self.initialise()
 
     def initialise(self):
+        self.clean_residual_sessions()
         make_dirs(self.factory_folder)
         make_dirs(self.delivery_folder)
         if isfile(self.status_file):
@@ -101,6 +102,9 @@ class Server:
         time_prefix = time_prefix[:-3] + '$ '
         msg = time_prefix + msg + '\n'
         print(msg)
+
+    def clean_residual_sessions(self):
+        os.system("kill -9 $(pgrep -f 'MATLAB -mvmInputPipe')")
 
     def main(self):
         num_min = random.randint(2, 4)
@@ -137,6 +141,7 @@ class Server:
             self.print("Resetting factory")
             self.kill_all_sessions()
             self.purge_factory()
+            self.clean_residual_sessions()
             self.reset_status_dict()
             self.update_server_status()
             os.unlink(p_join(self.new_task_folder, purge_task))
@@ -151,6 +156,7 @@ class Server:
             self.kill_all_sessions()
             self.clean_unfinished_tasks()
             self.prepare_factory()
+            self.clean_residual_sessions()
             self.reset_status_dict()
             self.update_server_status()
             os.unlink(p_join(self.new_task_folder, clean_task))
@@ -176,8 +182,6 @@ class Server:
         self.update_sessions_status()
 
     def on_start_task(self):
-        # comment out due to debug
-        return
         if int(self.status_dict['num_running']) == 0:
             self.prepare_factory()
         sessions = self.get_finished_sessions()
@@ -492,10 +496,11 @@ class Server:
             # run the session
             for k, s in sessions.items():
                 s.main()
-            # go back to default_folder
+
             self.print(
                 "{} sessions are running from this cycle"
                 .format(len(sessions)))
+            # go back to default_folder
             os.chdir(self.default_folder)
 
     def kill_all_sessions(self):
