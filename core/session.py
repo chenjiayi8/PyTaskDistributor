@@ -12,6 +12,7 @@ import shutil
 import sys
 import time
 import traceback
+import dirsync
 from datetime import datetime
 from distutils.dir_util import copy_tree
 from glob import glob
@@ -303,7 +304,7 @@ class Session:
         target_folder = p_join(self.mat_folder_path, self.name)
         source_folder = p_join(self.factory_folder, 'Output', self.name)
         # copy simulation results to task result folder
-        copy_tree(source_folder, target_folder)
+        dirsync.sync(source_folder, target_folder, 'sync', create=True)
         # delivery everything excluding mat file
         self.write_log('Ready to delivery result')
         time.sleep(3)
@@ -311,6 +312,13 @@ class Session:
         self.server.clean_folder(source_folder, 'postProcess in Session',
                                  delete=True)
         os.chdir(self.default_folder)
+        # write last log in task result folder
+        self.logFile = p_join(self.mat_folder_path,
+                              self.name, self.name + '.txt')
+        self.write_log("post_process finished for {}".format(self.name))
+        # write last log in deliveried folder
+        self.logFile = p_join(self.delivery_folder_path,
+                              self.name, self.name + '.txt')
         self.write_log("post_process finished for {}".format(self.name))
 
     def main(self, target=''):

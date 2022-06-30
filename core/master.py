@@ -435,7 +435,7 @@ class Master:
         new_xlsx_name = p_join(self.main_folder, 'Output',
                                'TaskList_' + last_modified_time_str + '.xlsx')
         output_folder = p_join(self.main_folder, 'Output',
-                               'TaskList_' + last_modified_time_str)
+                               last_modified_time_str)
         make_dirs(output_folder)
         write_json_from_df(new_json_name, task_table)
         shutil.copyfile(self.task_file_path, new_xlsx_name)

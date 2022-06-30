@@ -15,7 +15,7 @@ import traceback
 from collections import OrderedDict
 # import time
 from datetime import datetime
-#from distutils.dir_util import copy_tree
+# from distutils.dir_util import copy_tree
 from glob import glob
 from multiprocessing import Manager
 from os.path import isdir, isfile, join as p_join
@@ -54,6 +54,7 @@ class Server:
             self.status_dict = read_json_to_dict(self.status_file)
         else:
             self.status_dict = OrderedDict()
+        self.status_dict_clean_counter = 0
         self.main_folder = self.setup['order']
         self.factory_folder = self.setup['factory']
         self.delivery_folder = self.setup['delivery']
@@ -165,21 +166,35 @@ class Server:
         task_list = list(filter(self.validedTask, task_list))
 
         if len(task_list) > 0:
-            task = random.choice(task_list)  # work on one task per cycle
+            self.status_dict_cleaner(reset=True)
+            # work on one task per cycle
+            task = random.choice(task_list)
             # announce the start of simulation
             self.print("Working on {}".format(task))
             self.update_folder_paths(task)  # paths for output
             self.on_start_task()
             df = self.get_task_table(task)  # check new task
             if df is not None:
-                df = self.remove_finished_inputs(df)
-                sessions = self.create_sessions(df)
+                sessions = self.create_sessions(df, task)
                 sessions = self.workload_balance(sessions)
                 self.run_sessions(sessions)
+        else:  # clean if no task at all
+            self.status_dict_cleaner(reset=False)
 
         # wait for the starting of simulation
         sleep_mins(1)
         self.update_sessions_status()
+
+    def status_dict_cleaner(self, reset=False):
+        if reset:  # reset counter
+            self.status_dict_clean_counter = 0
+        else:
+            self.status_dict_clean_counter += 1
+
+        # no task for N cycles, clear status_dict
+        if self.status_dict_clean_counter > 10:
+            self.status_dict_clean_counter = 0
+            self.status_dict['finished_sessions'].clear()
 
     def on_start_task(self):
         if int(self.status_dict['num_running']) == 0:
@@ -354,29 +369,40 @@ class Server:
         unfinished_ss = [s for s in unfinished_ss if s.startswith('Task-')]
         return unfinished_ss, output_folder
 
-    def get_unfinished_mats(self, df):
-        unfinished_mats = {}
-        output_folders = [p_join(self.factory_folder, 'Output'),
-                          self.mat_folder_path]
-        for folder in output_folders:
+    def get_task_progresses(self, df):
+        task_progresses = {}
+        for index in df.index:
+            task_progresses[index] = {'finished': False,  'latest': None,
+                                      'factory': None, 'delivery': None}
+        output_folders = {'factory': p_join(self.factory_folder, 'Output'),
+                          'delivery': self.mat_folder_path}
+        for name, folder in output_folders.items():
             make_dirs(folder)
             sessions = os.listdir(folder)
-            sessions = [s for s in sessions if s.startswith('Task-')]
             sessions = [s for s in sessions if s in df.index]
             for s in sessions:
+                if task_progresses[s]['finished']:
+                    continue
                 data_folder = p_join(folder, s, 'data')
-                if not isfile(p_join(data_folder, 'final.mat')):
+                if isfile(p_join(data_folder, 'final.mat')):
+                    task_progresses[s]['finished'] = True
+                    task_progresses[s]['latest'] = p_join(data_folder,
+                                                          'final.mat')
+                    task_progresses[s][name] = p_join(folder, s)
+                else:
                     latest = get_latest_file_in_folder(data_folder, '.mat')
                     if latest is None:
                         continue
-                    if s not in unfinished_mats:
-                        unfinished_mats[s] = latest
+                    if task_progresses[s]['latest'] is None:
+                        task_progresses[s]['latest'] = latest
+                        task_progresses[s][name] = p_join(folder, s)
                     else:
                         if os.path.getmtime(latest) > \
-                           os.path.getmtime(unfinished_mats[s]):
-                            unfinished_mats[s] = latest
+                           os.path.getmtime(task_progresses[s]['latest']):
+                            task_progresses[s]['latest'] = latest
+                            task_progresses[s][name] = p_join(folder, s)
 
-        return unfinished_mats
+        return task_progresses
 
     def remove_finished_inputs(self, df):
         if len(df) == 0:
@@ -400,8 +426,8 @@ class Server:
             else:
                 return True
 
-    def create_sessions(self, df):
-        unfinished_mats = self.get_unfinished_mats(df)
+    def create_sessions(self, df, task):
+        task_progress = self.get_task_progresses(df)
         columns = list(df.columns)
         input_columns = []
         for c in columns:
@@ -419,17 +445,21 @@ class Server:
         sessions = {}
         for i in range(len(df)):
             session = df.index[i]
-            if session in unfinished_mats:  # ran before
+            if not task_progress[session]['finished']:  # not finished
                 if not self.is_running(session):  # not running now
-                    mat_path = unfinished_mats[session]
-                    if mat_path:  # Progress is saved
+                    mat_path = task_progress[session]['latest']
+                    if mat_path is not None:  # Progress is saved
                         sessions[session] = Session(self, session, mat_path)
-                    else:  # Nothing is saved
+                    else:  # Nothing is saved or not started yet
                         _input = get_input(df.loc[session, input_columns])
                         sessions[session] = Session(self, session, _input)
-            else:  # new session
-                _input = get_input(df.loc[session, input_columns])
-                sessions[session] = Session(self, session, _input)
+            else:
+                # finished but not delivered
+                if task_progress[session]['factory'] is not None:
+                    time_str = self.get_time_str(task)
+                    s = Session(self, session, None, time_str)
+                    s.post_process()
+
         return sessions
 
     def deal_with_failed_session(self, name):
