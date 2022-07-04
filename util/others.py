@@ -14,6 +14,12 @@ import pandas as pd
 import psutil
 from openpyxl import load_workbook
 import importlib
+import tabulate as tb
+
+
+def print_table(table):
+    msg = tb.tabulate(table.values, table.columns, tablefmt="grid")
+    print(msg)
 
 
 def getLibTrackingObj():

@@ -14,11 +14,7 @@ import pandas as pd
 import tabulate as tb
 
 from PyTaskDistributor.util.json import read_json_to_df
-
-
-def print_table(table):
-    msg = tb.tabulate(table.values, table.columns, tablefmt="grid")
-    print(msg)
+from PyTaskDistributor.util.others import print_table
 
 
 def parse_time(t):
@@ -53,16 +49,17 @@ class Monitor:
     def __init__(self, master):
         self.master = master
         self.columns_server = ['name', 'CPU_max', 'MEM_max', 'CPU_total',
-                               'MEM_total', 'DISK_total', 'num_assigned',
-                               'num_running', 'num_finished', 'CPU_matlab',
-                               'MEM_matlab', 'updated_time']
-        self.columns_task = ['name', 'num_task', 'num_assigned',
+                               'MEM_total', 'DISK_total', 'CPU_matlab',
+                               'MEM_matlab', 'num_assigned',
+                               'num_running', 'num_finished',  'updated_time']
+        self.columns_task = ['name', 'num_task', 'num_assigned', 'num_running',
                              'num_finished', 'updated_time']
         pass
 
     def print_progress(self, num_mins=5):
         clear_console()
-        print("Updated on {} and will reload in {} mins".format(parse_time(datetime.now()), num_mins))
+        print("Updated on {} and will reload in {} mins".format(
+                parse_time(datetime.now()), num_mins))
         self.print_task_progress()
         return self.print_server_progress()
 
@@ -75,26 +72,31 @@ class Monitor:
         task_list = self.master.get_task_list()
         assigned_sessions = []
         finished_sessions = []
+        current_sessions = []
         for server in self.master.server_list:
-            assigned_sessions += server['current_sessions']
+            assigned_sessions += server['assigned_sessions']
             finished_sessions += server['finished_sessions'].keys()
+            current_sessions += server['current_sessions']
         for task in task_list:
             time_str = get_time_str(task)
             task_path = os.path.join(self.master.new_task_folder, task)
             df = read_json_to_df(task_path)
             df = df.sort_values('Num')
             df['UUID'] = df['UUID'].apply(str)
-            temp = list(zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
+            temp = list(zip(['Task'] * len(df), df['Num'].apply(str),
+                            df['UUID']))
             index1 = ['-'.join(t) for t in temp]
             index2 = [time_str + '_' + '-'.join(t) for t in temp]
             num_task = len(df)
             num_assigned = len(get_duplicated_items(assigned_sessions, index1))
             num_finished = len(get_duplicated_items(finished_sessions, index2))
+            num_running = len(get_duplicated_items(current_sessions, index1))
             updated_time = datetime.fromtimestamp(os.path.getmtime(task_path))
             updated_time_str = parse_time(updated_time)
-            data = [task[:-5], num_task, num_assigned,
+            data = [task[:-5], num_task, num_assigned, num_running,
                     num_finished, updated_time_str]
-            df_tasks = df_tasks.append(pd.DataFrame(data=[data], columns=self.columns_task))
+            df_tasks = df_tasks.append(pd.DataFrame(data=[data],
+                                                    columns=self.columns_task))
         print_table(df_tasks)
 
     def print_server_progress(self):
@@ -102,10 +104,12 @@ class Monitor:
         df = pd.DataFrame(columns=self.columns_server)
         for server in self.master.server_list:
             data = [server[k] for k in self.columns_server]
-            df = df.append(pd.DataFrame(data=[data], columns=self.columns_server))
+            df = df.append(pd.DataFrame(data=[data],
+                                        columns=self.columns_server))
         df['updated_time'] = df['updated_time'].apply(parse_time)
         df = df.fillna(0)
-        columns_new = [a + '(%)' if is_server_state(a) else a for a in df.columns]
+        columns_new = [a + '(%)' if is_server_state(a) else a
+                       for a in df.columns]
         df.columns = columns_new
         df_target = df.loc[:, columns_new[1:]]
         col_head = [columns_new[0]] + df.loc[:, columns_new[0]].values.tolist()

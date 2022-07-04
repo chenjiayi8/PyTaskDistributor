@@ -82,6 +82,8 @@ class Server:
             self.status_dict['user'] = self.user_name
             self.status_dict['CPU_max'] = self.CPU_max
             self.status_dict['MEM_max'] = self.MEM_max
+            if 'assigned_sessions' not in self.status_dict:  # temp fix
+                self.status_dict['assigned_sessions'] = []
         else:
             self.reset_status_dict()
         self.record_status()
@@ -94,6 +96,7 @@ class Server:
         self.status_dict['CPU_max'] = self.CPU_max
         self.status_dict['MEM_max'] = self.MEM_max
         self.status_dict['msg'] = []
+        self.status_dict['assigned_sessions'] = []
         self.status_dict['current_sessions'] = []
         self.status_dict['finished_sessions'] = OrderedDict()
 
@@ -133,6 +136,7 @@ class Server:
 
     def on_interval(self):
         self.manual_remove_task()
+        self.remove_finished_task()
         task_list = self.get_task_list()
         clean_task = self.host_name + '_clean.json'
         purge_task = self.host_name + '_purge.json'
@@ -175,6 +179,7 @@ class Server:
             self.on_start_task()
             df = self.get_task_table(task)  # check new task
             if df is not None:
+                df = self.remove_finished_inputs(df)
                 sessions = self.create_sessions(df, task)
                 sessions = self.workload_balance(sessions)
                 self.run_sessions(sessions)
@@ -194,6 +199,8 @@ class Server:
         # no task for N cycles, clear status_dict
         if self.status_dict_clean_counter > 10:
             self.status_dict_clean_counter = 0
+            self.status_dict['assigned_sessions'].clear()
+            self.status_dict['current_sessions'].clear()
             self.status_dict['finished_sessions'].clear()
 
     def on_start_task(self):
@@ -205,7 +212,6 @@ class Server:
             self.write_server_status()
         # remove finished sessions from current sessions
         self.remove_finished_sessions()
-        self.remove_finished_task()
 
     def write_server_status(self):
         # calculate the average CPU/MEM percents and write
@@ -485,22 +491,26 @@ class Server:
         if len(sessions) == 0:
             return self.none("Zero task")
         num_target = 2
+        num_default = 2
         num_current = len(self.current_sessions)
         if num_current == 0:
             num_target = 4
 
         if d['num_running'] > 0:
-            cpu_available = d['CPU_max'] - d['CPU_total']
-            cpu_per_task = d['CPU_matlab'] / d['num_running']
-            num_cpu = math.floor(cpu_available / cpu_per_task)
-            mem_available = d['MEM_max'] - d['MEM_total']
-            mem_per_task = d['MEM_matlab'] / d['num_running']
-            num_mem = math.floor(mem_available / mem_per_task)
-            num_target = min([num_cpu, num_mem])
-            if num_target > 4:  # Max add 4 per cycle
-                num_target = 4
-            if num_target < 0:
-                num_target = 0
+            try:
+                cpu_available = d['CPU_max'] - d['CPU_total']
+                cpu_per_task = d['CPU_matlab'] / d['num_running']
+                num_cpu = math.floor(cpu_available / cpu_per_task)
+                mem_available = d['MEM_max'] - d['MEM_total']
+                mem_per_task = d['MEM_matlab'] / d['num_running']
+                num_mem = math.floor(mem_available / mem_per_task)
+                num_target = min([num_cpu, num_mem])
+                if num_target > 4:  # Max add 4 per cycle
+                    num_target = 4
+                if num_target < 0:
+                    num_target = 0
+            except Exception:
+                num_target = num_default
 
         self.print("Add maximum {} sessions".format(num_target))
         if num_target == 0:
@@ -527,10 +537,10 @@ class Server:
             for k, s in sessions.items():
                 s.main()
 
+            # go back to default_folder
             self.print(
                 "{} sessions are running from this cycle"
                 .format(len(sessions)))
-            # go back to default_folder
             os.chdir(self.default_folder)
 
     def kill_all_sessions(self):
@@ -564,6 +574,8 @@ class Server:
             key = session[underline_positions[1] + 1:]
             if key in self.status_dict['current_sessions']:
                 self.status_dict['current_sessions'].remove(key)
+            if key in self.status_dict['assigned_sessions']:
+                self.status_dict['assigned_sessions'].remove(key)
             if key in self.current_sessions:
                 del self.current_sessions[key]
 
@@ -592,6 +604,8 @@ class Server:
             # add session
             if k not in self.status_dict['current_sessions']:
                 self.status_dict['current_sessions'].append(k)
+            if k not in self.status_dict['assigned_sessions']:
+                self.status_dict['assigned_sessions'].append(k)
 
             if s.has_finished():
                 s.output = s.read_output()
@@ -601,6 +615,8 @@ class Server:
                     self.status_dict['finished_sessions'][key] = s.output
                 if k in self.current_sessions:
                     del self.current_sessions[k]
+                if k in self.status_dict['assigned_sessions']:
+                    self.status_dict['assigned_sessions'].remove(k)
                 if k in self.status_dict['current_sessions']:
                     self.status_dict['current_sessions'].remove(k)
                 if k in self.sessions_dict:
@@ -672,6 +688,8 @@ class Server:
         for session in df.index:
             if session in self.current_sessions:
                 del self.current_sessions[session]
+            if session in self.status_dict['assigned_sessions']:
+                self.status_dict['assigned_sessions'].remove(session)
             if session in self.status_dict['current_sessions']:
                 self.status_dict['current_sessions'].remove(session)
 
@@ -739,9 +757,34 @@ class Server:
             df.index = index
             df = df.fillna('')
             df2 = df[df['HostName'] == self.host_name]
+            df3 = df[df['HostName'] != self.host_name]
+            self.update_assigned_task(df2)
+            self.remove_redistributed_task(df3)
             return df2
         else:
             return None
+
+    def update_assigned_task(self, df):
+        for k in df.index:
+            if k not in self.status_dict['assigned_sessions']:
+                self.status_dict['assigned_sessions'].append(k)
+
+    def remove_redistributed_task(self, df):
+        for k in df.index:
+            if k in self.status_dict['assigned_sessions']:
+                self.status_dict['assigned_sessions'].remove(k)
+                key = self.get_finished_session_key(k)
+                if key in self.status_dict['finished_sessions']:
+                    del self.status_dict['finished_sessions'][key]
+                if k in self.current_sessions:
+                    del self.current_sessions[k]
+                if k in self.status_dict['current_sessions']:
+                    self.status_dict['current_sessions'].remove(k)
+                if k in self.sessions_dict:
+                    self.sessions_dict[k].clean_workspace(
+                            'remove_redistributed_task')
+                    self.sessions_dict[k].delete_relevent_files()
+                    del self.sessions_dict[k]
 
 
 if __name__ == '__main__':

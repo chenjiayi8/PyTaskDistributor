@@ -45,6 +45,7 @@ class Master:
         self.monitor = Monitor(self)
         self.server_list = []
         self.server_list_offline = {}
+        self.server_list_overflow = {}
         self.msgs = []
 
     def main(self):
@@ -133,7 +134,7 @@ class Master:
                     if diff_min < timeout_mins:
                         self.server_list.append(s_json)
             except Exception:
-                print("Failed to read status of {}".format(s))
+                self.msgs.append("Failed to read status of {}".format(s))
                 pass
 
     def reset_offline_task(self, df):
@@ -175,6 +176,19 @@ class Master:
 
         return df
 
+    def server_overflow(self, server):
+        redistributed = False
+        if server['name'] not in self.server_list_overflow:
+            self.server_list_overflow[server['name']] = 1
+        else:
+            self.server_list_overflow[server['name']] += 1
+
+        if self.server_list_overflow[server['name']] > 10:
+            self.server_list_overflow[server['name']] = 0
+            redistributed = True
+
+        return redistributed
+
     def workload_balance(self):
         num_default = 2
         task_list = self.get_task_list()
@@ -202,50 +216,64 @@ class Master:
         # assign tasks among online servers
         for i in range(num_server):
             server = self.server_list[i]
-            # check if assigned sessions are running
-            skip_flag = False
             num_target = 0
             msg_cause = ''
-            df_temp = df[df['HostName'] == '']
+
+            # check if server is overwhelmed
+            if server['CPU_total'] > server['CPU_max'] or \
+               server['MEM_total'] > server['MEM_max']:
+                skip_flag = True
+                msg_cause += 'Server is overwhelmed\n'
+            else:
+                skip_flag = False
+
             # No more sessions
-            if len(df_temp) == 0:
-                msg_cause = 'All sessions are assigned\n'
-                msg = "Assign 0 new sessions of {} for Server {} because: {}"\
-                      .format(task, server['name'], msg_cause)
-                self.msgs.append(msg)
-                continue
+            if not skip_flag:
+                df_temp = df[df['HostName'] == '']
+                if len(df_temp) == 0:
+                    msg_cause += 'All sessions are assigned\n'
+                    skip_flag = True
 
             # assigned sessions but not running
-            if len(server['current_sessions']) > server['num_running']:
-                skip_flag = True
-                msg_cause += 'Assigned sessions are not running\n'
-            df_assigned = df[(df['HostName'] == server['name']) &
-                             (df['Finished'] != 1)]
+            if not skip_flag:
+                if len(server['current_sessions']) > server['num_running']:
+                    skip_flag = True
+                    msg_cause += 'Assigned sessions are not running\n'
+                df_assigned = df[(df['HostName'] == server['name']) &
+                                 (df['Finished'] != 1)]
 
             # assigned sessions but not received
-            for idx in df_assigned.index:
-                if idx not in server['current_sessions']:
-                    finished_sessions = server['finished_sessions'].keys()
-                    idx_in_finished_sessions = [idx in s
-                                                for s in finished_sessions]
-                    if not any(idx_in_finished_sessions):
-                        if not skip_flag:
-                            msg_cause += '\n'
-                        skip_flag = True
-                        msg_cause += 'Assigned session {} are not received\n'\
-                                     .format(idx)
+            if not skip_flag:
+                for idx in df_assigned.index:
+                    if idx not in server['current_sessions']:
+                        finished_sessions = server['finished_sessions'].keys()
+                        idx_in_finished_sessions = [idx in s
+                                                    for s in finished_sessions]
+                        if not any(idx_in_finished_sessions):
+                            if not skip_flag:
+                                msg_cause += '\n'
+                            skip_flag = True
+                            msg_cause += ('Assigned session {} are not '
+                                          'received\n').format(idx)
+                            if self.server_overflow(server):
+                                df.loc[idx, 'HostName'] = ''
 
             if not skip_flag:
                 if int(server['num_running']) == 0:
                     num_target = num_default
                 else:
-                    cpu_available = server['CPU_max'] - server['CPU_total']
-                    cpu_per_task = server['CPU_matlab'] / server['num_running']
-                    num_cpu = math.floor(cpu_available / cpu_per_task)
-                    mem_available = server['MEM_max'] - server['MEM_total']
-                    mem_per_task = server['MEM_matlab'] / server['num_running']
-                    num_mem = math.floor(mem_available / mem_per_task)
-                    num_target = min([num_cpu, num_mem])
+                    try:
+                        cpu_available = server['CPU_max'] - server['CPU_total']
+                        cpu_per_task = server['CPU_matlab'] /\
+                            server['num_running']
+                        num_cpu = math.floor(cpu_available / cpu_per_task)
+                        mem_available = server['MEM_max'] - server['MEM_total']
+                        mem_per_task = server['MEM_matlab'] /\
+                            server['num_running']
+                        num_mem = math.floor(mem_available / mem_per_task)
+                        num_target = min([num_cpu, num_mem])
+                    except Exception:
+                        num_target = num_default
                     # Max add num_default per cycle
                     if num_target > num_default:
                         num_target = num_default
@@ -337,7 +365,9 @@ class Master:
             if all(df['Finished'] == 1):  # rename to json.done
                 path_done = p_join(self.finished_task_folder, task + '.done')
                 shutil.move(path, path_done)
-                send_email('Finished task', "{} is done".format(task))
+                main_folder = Path(self.main_folder).parts[-1]
+                send_email('Finished task', "{}: {} is done".format(
+                        main_folder, task))
 
     def remove_aborted_task(self):
         task_list = self.get_task_list(
@@ -451,7 +481,7 @@ class Master:
             task_time = datetime.strptime(task_time_str, "%Y%m%d_%H%M%S")
             # move old tasks to finished task folder
             if remove_time >= task_time:
-                print("Deleting old task {}".format(task))
+                self.msgs.append("Deleting old task {}".format(task))
                 old_path = p_join(self.new_task_folder, task)
                 new_path = p_join(self.finished_task_folder, task+'.done')
                 shutil.move(old_path, new_path)
@@ -489,7 +519,7 @@ class Master:
     def generate_clean_tasks(self):
         clean_task = p_join(self.new_task_folder, 'clean.json')
         if isfile(clean_task):
-            print("Generating clean tasks")
+            self.msgs.append("Generating clean tasks")
             self.removeResidualTasks(clean_task)
             delete_file(clean_task)
             for server in self.server_list:
@@ -500,7 +530,7 @@ class Master:
     def generate_purge_tasks(self):
         purge_task = p_join(self.new_task_folder, 'purge.json')
         if isfile(purge_task):
-            print("Generating purge tasks")
+            self.msgs.append("Generating purge tasks")
             self.removeResidualTasks(purge_task)
             delete_file(purge_task)
             for server in self.server_list:
