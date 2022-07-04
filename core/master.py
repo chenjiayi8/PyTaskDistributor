@@ -239,24 +239,25 @@ class Master:
                 if len(server['current_sessions']) > server['num_running']:
                     skip_flag = True
                     msg_cause += 'Assigned sessions are not running\n'
-                df_assigned = df[(df['HostName'] == server['name']) &
-                                 (df['Finished'] != 1)]
 
             # assigned sessions but not received
-            if not skip_flag:
-                for idx in df_assigned.index:
-                    if idx not in server['current_sessions']:
-                        finished_sessions = server['finished_sessions'].keys()
-                        idx_in_finished_sessions = [idx in s
-                                                    for s in finished_sessions]
-                        if not any(idx_in_finished_sessions):
-                            if not skip_flag:
-                                msg_cause += '\n'
-                            skip_flag = True
-                            msg_cause += ('Assigned session {} are not '
-                                          'received\n').format(idx)
-                            if self.server_overflow(server):
-                                df.loc[idx, 'HostName'] = ''
+            df_assigned = df[(df['HostName'] == server['name']) &
+                             (df['Finished'] != 1)]
+            for idx in df_assigned.index:
+                if idx not in server['current_sessions']:
+                    finished_sessions = server['finished_sessions'].keys()
+                    idx_in_finished_sessions = [idx in s
+                                                for s in finished_sessions]
+                    if not any(idx_in_finished_sessions):
+                        if not skip_flag:
+                            msg_cause += '\n'
+                        skip_flag = True
+                        msg_cause += ('Assigned session {} of {} is not '
+                                      'received\n').format(idx, task)
+                        if self.server_overflow(server):
+                            msg_cause += ('Assigned session {} of {} is '
+                                          'redistributed\n').format(idx, task)
+                            df.loc[idx, 'HostName'] = ''
 
             if not skip_flag:
                 if int(server['num_running']) == 0:
