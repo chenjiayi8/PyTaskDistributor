@@ -516,8 +516,16 @@ class Server:
         if num_target == 0:
             return self.none("Zero target")
         if len(sessions) > num_target:
-            sessions_new = random.sample(sessions.items(), num_target)
-            return dict(sessions_new)
+            is_unfinished_list = [[s[1].is_unfinished, s[0]]
+                                  for s in sessions.items()]
+            random.shuffle(is_unfinished_list)
+            is_unfinished_list = sorted(is_unfinished_list, reverse=True)
+            sessions_new = {}
+            for i in range(num_target):
+                sessions_new[is_unfinished_list[i][1]] = \
+                    sessions[is_unfinished_list[i][1]]
+
+            return sessions_new
         else:
             return sessions
 

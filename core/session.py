@@ -14,7 +14,7 @@ import time
 import traceback
 import dirsync
 from datetime import datetime
-from distutils.dir_util import copy_tree
+#from distutils.dir_util import copy_tree
 from glob import glob
 # from PyTaskDistributor.util.extract import extractAfter
 from multiprocessing import Process
@@ -32,6 +32,7 @@ class Session:
         self.server = server
         self.name = name
         self.input = _input
+        self.is_unfinished = type(self.input) is str
         self.default_folder = server.default_folder
         self.main_folder = server.main_folder
         self.factory_folder = server.factory_folder
