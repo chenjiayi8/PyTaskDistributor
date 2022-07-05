@@ -550,15 +550,18 @@ class Server:
     def run_sessions(self, sessions):
         if sessions is not None:
             # record pid first
+            valided_sessions = []
             for k, s in sessions.items():
-                s.create_matlab_eng()
-                self.sessions_dict[k] = s
-                self.status_dict['current_sessions'][k] = \
-                    {'pid': s.pid, 'cpu': 0.0, 'mem': 0.0,
-                     'zombie': 0}
+                exitcode = s.create_matlab_eng()
+                if exitcode == 0:
+                    valided_sessions.append(s)
+                    self.sessions_dict[k] = s
+                    self.status_dict['current_sessions'][k] = \
+                        {'pid': s.pid, 'cpu': 0.0, 'mem': 0.0,
+                         'zombie': 0}
 
             # run the session
-            for k, s in sessions.items():
+            for s in valided_sessions:
                 s.main()
 
             # go back to default_folder

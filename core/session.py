@@ -121,6 +121,7 @@ class Session:
     def create_matlab_eng(self, option=None):
         os.chdir(self.factory_folder)
         self.initialise()
+        exitcode = 0
         if type(self.input) is str:
             caller = 'old task'
         else:
@@ -137,8 +138,10 @@ class Session:
             self.write_log("Creating matlab engine for {} {} done with pid {}"
                            .format(caller, self.name, self.pid))
         except (KeyboardInterrupt, SystemExit):
+            exitcode = -1
             raise
         except Exception as e:
+            exitcode = -2
             self.write_log("Failed to create matlab engine with message:\n {}"
                            .format(sys.exc_info()))
             trace_back_obj = sys.exc_info()[2]
@@ -146,6 +149,8 @@ class Session:
             self.write_log(str(e))
             self.write_log(traceback.format_exc())
             self.server.deal_with_failed_session(self.name)
+
+        return exitcode
 
     def get_simulation_output(self):
         os.chdir(self.factory_folder)
@@ -206,8 +211,7 @@ class Session:
                                  delete=True)
         self.server.clean_folder(factory_folder, 'delete_relevent_files',
                                  delete=True)
-    
-    
+
     def get_json_output(self):
         data_folder = p_join(self.working_folder, 'data')
         json_file = get_latest_file_in_folder(data_folder, '.json')
@@ -273,7 +277,8 @@ class Session:
         time.sleep(random.randint(1, 30))
         self.write_log("run_matlab_unfinished_task with input {}"
                        .format(self.input))
-        self.eng.MatlabToPyRunUnfinishedTasks([self.input, self.logFile], nargout=0)
+        self.eng.MatlabToPyRunUnfinishedTasks([self.input, self.logFile],
+                                              nargout=0)
         self.write_log("run_matlab_unfinished_task finished")
         output = self.read_output()
         return output
