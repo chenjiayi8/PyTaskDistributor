@@ -9,12 +9,13 @@ import os
 import random
 import time
 import uuid
-
+import sys
 import pandas as pd
 import psutil
 from openpyxl import load_workbook
 import importlib
 import tabulate as tb
+from PyTaskDistributor.util.extract import extract_after
 
 
 def print_table(table):
@@ -102,6 +103,42 @@ def get_latest_file_in_folder(folder, ending=''):
     return path_list_file[target_id]
 
 
+def get_latest_timestamp(folder, ending=''):
+    if not os.path.isdir(folder):
+        return None
+    file_list = os.listdir(folder)
+    path_list = [os.path.join(folder, file)
+                 for file in file_list if file.endswith(ending)]
+    path_list_file = list(filter(os.path.isfile, path_list))
+    if len(path_list_file) == 0:
+        return None
+    mat_modified_time = [os.path.getmtime(path) for path in path_list_file]
+    return max(mat_modified_time)
+
+
+def wait_changes(args):
+    watching_check = ['-w=' in o for o in args]
+    if any(watching_check):
+        current_time = time.time()
+        watching_id = watching_check.index(True)
+        watching_folder = extract_after(sys.argv[watching_id], '-w=.')
+        print('Waiting max 30mins for the change of folder .{}'.format(
+                watching_folder))
+        watching_folder = watching_folder.split(os.path.sep)
+        watching_folder = os.path.join(os.getcwd(), *watching_folder)
+        time_interval_mins = 10/60  # check every 10 seconds
+        loop_guard = round(30/time_interval_mins)
+        while loop_guard > 0:
+            loop_guard -= 1
+            latest_time = get_latest_timestamp(watching_folder, '.py')
+            if latest_time < current_time:
+                sleep_mins(time_interval_mins)
+            else:
+                latest_file = get_latest_file_in_folder(watching_folder, 'py')
+                print('{} is changed'.format(os.path.basename(latest_file)))
+                break
+
+
 def get_file_suffix(path):
     basename = os.path.basename(path)
     dot_location = [i for i in range(len(basename)) if basename[i] == '.']
@@ -166,6 +203,13 @@ def is_zombie_process(pid):
 def get_process_cpu(pid):
     try:
         return psutil.Process(pid).cpu_percent(interval=1)
+    except Exception:
+        return 0.0
+
+
+def get_process_mem(pid):
+    try:
+        return psutil.Process(pid).memory_percent()
     except Exception:
         return 0.0
 

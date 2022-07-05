@@ -14,7 +14,7 @@ import time
 import traceback
 import dirsync
 from datetime import datetime
-#from distutils.dir_util import copy_tree
+# from distutils.dir_util import copy_tree
 from glob import glob
 # from PyTaskDistributor.util.extract import extractAfter
 from multiprocessing import Process
@@ -199,6 +199,15 @@ class Session:
                     shutil.copyfile(item, path_new)
         self.write_log("delivery_task finished for {}".format(self.name))
 
+    def delete_relevent_files(self):
+        delivery_folder = p_join(self.mat_folder_path, self.name)
+        factory_folder = p_join(self.factory_folder, 'Output', self.name)
+        self.server.clean_folder(delivery_folder, 'delete_relevent_files',
+                                 delete=True)
+        self.server.clean_folder(factory_folder, 'delete_relevent_files',
+                                 delete=True)
+    
+    
     def get_json_output(self):
         data_folder = p_join(self.working_folder, 'data')
         json_file = get_latest_file_in_folder(data_folder, '.json')
@@ -295,7 +304,6 @@ class Session:
             with open(self.logFile, 'rt') as f:
                 lines = f.read().splitlines()
                 lines = lines[1:]
-                output['Finished'] = 1
                 output['err_msg'] = '|'.join(lines)
 
         self.post_process()

@@ -30,8 +30,9 @@ from PyTaskDistributor.util.extract import extract_between
 from PyTaskDistributor.util.json import (
     read_json_to_df, read_json_to_dict, write_json_from_dict)
 from PyTaskDistributor.util.others import (
-    get_file_suffix, get_latest_file_in_folder, get_num_processor,
-    get_process_cpu, get_process_list, is_zombie_process, make_dirs, sleep_mins
+    get_file_suffix, get_latest_file_in_folder, get_process_cpu,
+    get_process_mem, get_process_list, make_dirs, get_num_processor,
+    sleep_mins
     )
 
 
@@ -73,7 +74,7 @@ class Server:
         self.initialise()
 
     def initialise(self):
-        self.clean_residual_sessions()
+        self.kill_residual_sessions()
         make_dirs(self.factory_folder)
         make_dirs(self.delivery_folder)
         if isfile(self.status_file):
@@ -82,8 +83,6 @@ class Server:
             self.status_dict['user'] = self.user_name
             self.status_dict['CPU_max'] = self.CPU_max
             self.status_dict['MEM_max'] = self.MEM_max
-            if 'assigned_sessions' not in self.status_dict:  # temp fix
-                self.status_dict['assigned_sessions'] = []
         else:
             self.reset_status_dict()
         self.record_status()
@@ -97,7 +96,7 @@ class Server:
         self.status_dict['MEM_max'] = self.MEM_max
         self.status_dict['msg'] = []
         self.status_dict['assigned_sessions'] = []
-        self.status_dict['current_sessions'] = []
+        self.status_dict['current_sessions'] = OrderedDict()
         self.status_dict['finished_sessions'] = OrderedDict()
 
     @staticmethod
@@ -107,7 +106,15 @@ class Server:
         msg = time_prefix + msg + '\n'
         print(msg)
 
-    def clean_residual_sessions(self):
+    def kill_residual_sessions(self):
+        # kill existing processes
+        for _, v in self.status_dict['current_sessions'].items():
+            os.system("kill -9 {}".format(v['pid']))
+
+        self.status_dict['current_sessions'].clear()
+
+    def kill_all_sessions(self):
+        # kill all matlab processes
         os.system("kill -9 $(pgrep -f 'MATLAB -mvmInputPipe')")
 
     def main(self):
@@ -146,7 +153,7 @@ class Server:
             self.print("Resetting factory")
             self.kill_all_sessions()
             self.purge_factory()
-            self.clean_residual_sessions()
+            self.kill_residual_sessions()
             self.reset_status_dict()
             self.update_server_status()
             os.unlink(p_join(self.new_task_folder, purge_task))
@@ -161,7 +168,7 @@ class Server:
             self.kill_all_sessions()
             self.clean_unfinished_tasks()
             self.prepare_factory()
-            self.clean_residual_sessions()
+            self.kill_residual_sessions()
             self.reset_status_dict()
             self.update_server_status()
             os.unlink(p_join(self.new_task_folder, clean_task))
@@ -177,7 +184,7 @@ class Server:
             self.print("Working on {}".format(task))
             self.update_folder_paths(task)  # paths for output
             self.on_start_task()
-            df = self.get_task_table(task)  # check new task
+            df = self.get_task_table(task, unfinished=True)  # check new task
             if df is not None:
                 df = self.remove_finished_inputs(df)
                 sessions = self.create_sessions(df, task)
@@ -189,6 +196,7 @@ class Server:
         # wait for the starting of simulation
         sleep_mins(1)
         self.update_sessions_status()
+        self.deal_with_zombie_sessions()
 
     def status_dict_cleaner(self, reset=False):
         if reset:  # reset counter
@@ -244,26 +252,23 @@ class Server:
         return df, df_matlab
 
     def deal_with_zombie_sessions(self):
-        keys = list(self.sessions_dict.keys())
-        for key in keys:
-            session = self.sessions_dict[key]
-            pid = session.pid
-            if pid != -1:
-                cpu = get_process_cpu(session.pid)
-                if cpu < 10.0:
-                    session.zombieState += 1
-                else:
-                    session.zombieState = 0  # reset
+        zombie_sessions = []
+        for k, v in self.status_dict['current_sessions'].items():
+            if v['zombie'] > 20:
+                zombie_sessions.append(k)
 
-                if is_zombie_process(session.pid):
-                    session.clean_workspace('being zombie')
-                    self.sessions_dict.pop(key, None)
-                if session.zombieState > 30:
-                    session.clean_workspace('being zombie')
-                    self.sessions_dict.pop(key, None)
+        for k in zombie_sessions:
+            if k in self.sessions_dict:
+                # delete session because of being zombie
+                self.sessions_dict[k].clean_workspace('being zombie')
+                del self.sessions_dict[k]
+            if k in self.current_sessions:
+                del self.current_sessions[k]
+            if k in self.status_dict['current_sessions']:
+                del self.status_dict['current_sessions'][k]
 
     def update_server_status(self):
-        df, df_matlab = self.get_processes()
+        df, _ = self.get_processes()
         self.status_dict['CPU_total'] = round(psutil.cpu_percent(interval=1),
                                               2)
         self.status_dict['MEM_total'] = round(sum(df['Mem']), 2)
@@ -272,20 +277,22 @@ class Server:
         self.status_dict['num_finished'] = \
             int(len(self.status_dict['finished_sessions']))
 
-        if len(df_matlab) > 0:
-            df_matlab = df_matlab.reset_index(drop=True)
-            # measure the CPU usage of matlab process
-            df_matlab['CPU'] = df_matlab['pid'].apply(get_process_cpu)
-            self.deal_with_zombie_sessions()
-            self.status_dict['num_running'] = len(df_matlab)
-            self.status_dict['CPU_matlab'] = \
-                round(df_matlab['CPU'].sum() / get_num_processor(), 2)
-            self.status_dict['MEM_matlab'] = round(sum(df_matlab['Mem']), 2)
-        else:
-            self.status_dict['num_running'] = 0
-            self.status_dict['CPU_matlab'] = 0.0
-            self.status_dict['MEM_matlab'] = 0.0
+        num_running = 0
+        CPU_matlab = 0.0
+        MEM_matlab = 0.0
+        for k in self.status_dict['current_sessions']:
+            s = self.status_dict['current_sessions'][k]
+            s['cpu'] = round(get_process_cpu(s['pid']), 2)
+            s['mem'] = round(get_process_mem(s['pid']), 2)
+            s['zombie'] = s['zombie'] + 1 if s['cpu'] < 10.0 else 0
+            num_running += 1
+            CPU_matlab += s['cpu']
+            MEM_matlab += s['mem']
 
+        self.status_dict['num_running'] = num_running
+        self.status_dict['CPU_matlab'] = \
+            round(CPU_matlab/get_num_processor(), 2)
+        self.status_dict['MEM_matlab'] = MEM_matlab
         self.status_dict['updated_time'] = datetime.now().isoformat()
 
     @staticmethod
@@ -340,7 +347,6 @@ class Server:
                 if isfile(json_path):
                     output = obj.read_output(json_file=json_path)
                     if output is not None:
-                        output['Finished'] = 1
                         key = self.task_time_str + '_' + target_sessions[i]
                         self.status_dict['finished_sessions'][key] = output
                     else:
@@ -397,8 +403,15 @@ class Server:
                     task_progresses[s][name] = p_join(folder, s)
                 else:
                     latest = get_latest_file_in_folder(data_folder, '.mat')
+                    err_json = get_latest_file_in_folder(data_folder,
+                                                         '-err.json')
                     if latest is None:
                         continue
+                    if err_json is not None:
+                        err_msg = read_json_to_dict(err_json)
+                        self.status_dict['msg'].append(
+                                '{} has err msg:\n{}'.format(
+                                        s, err_msg['err_msg']))
                     if task_progresses[s]['latest'] is None:
                         task_progresses[s]['latest'] = latest
                         task_progresses[s][name] = p_join(folder, s)
@@ -472,7 +485,7 @@ class Server:
         self.status_dict['msg'].append(
             '{} failed on {}'.format(name, datetime.now()))
         if name in self.status_dict['current_sessions']:
-            self.status_dict['current_sessions'].remove(name)
+            del self.status_dict['current_sessions'][name]
         if name in self.current_sessions:
             del self.current_sessions[name]
         if name in self.sessions_dict:
@@ -540,6 +553,9 @@ class Server:
             for k, s in sessions.items():
                 s.create_matlab_eng()
                 self.sessions_dict[k] = s
+                self.status_dict['current_sessions'][k] = \
+                    {'pid': s.pid, 'cpu': 0.0, 'mem': 0.0,
+                     'zombie': 0}
 
             # run the session
             for k, s in sessions.items():
@@ -550,12 +566,6 @@ class Server:
                 "{} sessions are running from this cycle"
                 .format(len(sessions)))
             os.chdir(self.default_folder)
-
-    def kill_all_sessions(self):
-        keys = list(self.sessions_dict.keys())
-        for k in keys:
-            self.sessions_dict[k].clean_workspace('killing all sessions')
-            del self.sessions_dict[k]
 
     def get_finished_session_key(self, session):
         task_list = self.get_task_list()
@@ -581,7 +591,7 @@ class Server:
                 i for i, ltr in enumerate(session) if ltr == '_']
             key = session[underline_positions[1] + 1:]
             if key in self.status_dict['current_sessions']:
-                self.status_dict['current_sessions'].remove(key)
+                del self.status_dict['current_sessions'][key]
             if key in self.status_dict['assigned_sessions']:
                 self.status_dict['assigned_sessions'].remove(key)
             if key in self.current_sessions:
@@ -593,10 +603,9 @@ class Server:
         for k in keys:
             s = self.sessions_dict[k]
             # check process status
-            if k not in self.current_sessions:
-                msg = '{} is not in Processes'.format(k)
-                if msg not in self.status_dict['msg']:
-                    self.status_dict['msg'].append(msg)
+            if k not in self.status_dict['current_sessions']:
+                self.status_dict['current_sessions'][k] = {
+                        'pid': s.pid, 'cpu': 0.0, 'mem': 0.0, 'zombie': 0}
             else:
                 if not s.process.is_alive():
                     if s.process.exitcode != 0:
@@ -604,16 +613,10 @@ class Server:
                         self.status_dict['msg'].append(
                             '{} {} is exited with exitcode {}\n'
                             .format(time_str, k, s.process.exitcode))
-                    if k in self.current_sessions:
-                        del self.current_sessions[k]
+                    if k in self.status_dict['current_sessions']:
+                        del self.status_dict['current_sessions'][k]
                     self.sessions_dict[k].clean_workspace('exiting with error')
                     del self.sessions_dict[k]
-
-            # add session
-            if k not in self.status_dict['current_sessions']:
-                self.status_dict['current_sessions'].append(k)
-            if k not in self.status_dict['assigned_sessions']:
-                self.status_dict['assigned_sessions'].append(k)
 
             if s.has_finished():
                 s.output = s.read_output()
@@ -626,7 +629,7 @@ class Server:
                 if k in self.status_dict['assigned_sessions']:
                     self.status_dict['assigned_sessions'].remove(k)
                 if k in self.status_dict['current_sessions']:
-                    self.status_dict['current_sessions'].remove(k)
+                    del self.status_dict['current_sessions'][k]
                 if k in self.sessions_dict:
                     # delete session because of finished
                     self.sessions_dict[k].clean_workspace('finished')
@@ -648,7 +651,7 @@ class Server:
             time_str = self.get_time_str(task)
             task_folder = p_join(self.factory_folder, 'Output', time_str)
             self.clean_task_trace(task)
-            self.clean_folder(task_folder, 'manualRemoveTask', delete=True)
+            self.clean_folder(task_folder, 'manual remove_task', delete=True)
 
     @staticmethod
     def get_time_str(task):
@@ -699,7 +702,7 @@ class Server:
             if session in self.status_dict['assigned_sessions']:
                 self.status_dict['assigned_sessions'].remove(session)
             if session in self.status_dict['current_sessions']:
-                self.status_dict['current_sessions'].remove(session)
+                del self.status_dict['current_sessions'][session]
 
         keys = list(self.status_dict['finished_sessions'].keys())
         for key in keys:
@@ -751,7 +754,7 @@ class Server:
         task_list = [f for f in os.listdir(folder) if f.endswith(ending)]
         return task_list
 
-    def get_task_table(self, task, folder=''):
+    def get_task_table(self, task, folder='', unfinished=False):
         if len(folder) == 0:
             folder = self.new_task_folder
         input_path = p_join(folder, task)
@@ -764,6 +767,8 @@ class Server:
             index = ['-'.join(t) for t in temp]
             df.index = index
             df = df.fillna('')
+            if unfinished:
+                df = df.drop(df[df['Finished'] == 1].index)
             df2 = df[df['HostName'] == self.host_name]
             df3 = df[df['HostName'] != self.host_name]
             self.update_assigned_task(df2)
@@ -787,13 +792,25 @@ class Server:
                 if k in self.current_sessions:
                     del self.current_sessions[k]
                 if k in self.status_dict['current_sessions']:
-                    self.status_dict['current_sessions'].remove(k)
+                    del self.status_dict['current_sessions'][k]
                 if k in self.sessions_dict:
                     self.sessions_dict[k].clean_workspace(
                             'remove_redistributed_task')
                     self.sessions_dict[k].delete_relevent_files()
                     del self.sessions_dict[k]
+                else:
+                    # create a session to delete_relevent_files
+                    s = Session(self, k, None, self.task_time_str)
+                    s.delete_relevent_files()
 
 
 if __name__ == '__main__':
+    from PyTaskDistributor.util.config import get_host_name, read_config
+
+    config_path = os.path.join(os.getcwd(), 'config.txt')
+    config = read_config(config_path)
+    hostname = get_host_name()
+    setup = config[hostname]
+    obj = Server(setup, debug=True)
+    obj.main()
     pass
