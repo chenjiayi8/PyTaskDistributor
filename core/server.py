@@ -74,7 +74,6 @@ class Server:
         self.initialise()
 
     def initialise(self):
-        self.kill_residual_sessions()
         make_dirs(self.factory_folder)
         make_dirs(self.delivery_folder)
         if isfile(self.status_file):
@@ -85,6 +84,8 @@ class Server:
             self.status_dict['MEM_max'] = self.MEM_max
         else:
             self.reset_status_dict()
+
+        self.kill_residual_sessions()
         self.record_status()
         self.write_server_status()
 
