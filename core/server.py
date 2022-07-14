@@ -129,7 +129,7 @@ class Server:
             for i in range(num_interval):
                 self.record_status()
                 sleep_mins(interval_mins)
-                self.cleanSyncConflictState()
+                self.clean_sync_conflict()
             self.write_server_status()
             need_assistance = False
         except (KeyboardInterrupt, SystemExit):
@@ -606,21 +606,16 @@ class Server:
         self.print("Update {} sessions status".format(len(keys)))
         for k in keys:
             s = self.sessions_dict[k]
-            # check process status
-            if k not in self.status_dict['current_sessions']:
-                self.status_dict['current_sessions'][k] = {
-                        'pid': s.pid, 'cpu': 0.0, 'mem': 0.0, 'zombie': 0}
-            else:
-                if not s.process.is_alive():
-                    if s.process.exitcode != 0:
-                        time_str = datetime.now().isoformat()
-                        self.status_dict['msg'].append(
-                            '{} {} is exited with exitcode {}\n'
-                            .format(time_str, k, s.process.exitcode))
-                    if k in self.status_dict['current_sessions']:
-                        del self.status_dict['current_sessions'][k]
-                    self.sessions_dict[k].clean_workspace('exiting with error')
-                    del self.sessions_dict[k]
+            if not s.process.is_alive():
+                if s.process.exitcode != 0:
+                    time_str = datetime.now().isoformat()
+                    self.status_dict['msg'].append(
+                        '{} {} is exited with exitcode {}\n'
+                        .format(time_str, k, s.process.exitcode))
+                if k in self.status_dict['current_sessions']:
+                    del self.status_dict['current_sessions'][k]
+                self.sessions_dict[k].clean_workspace('exiting with error')
+                del self.sessions_dict[k]
 
             if s.has_finished():
                 s.output = s.read_output()
@@ -667,7 +662,6 @@ class Server:
             self.delivery_folder, 'Output', time_str)
         self.mat_folder_path = p_join(self.factory_folder, 'Output', time_str)
         self.task_time_str = time_str
-#        make_dirs(self.delivery_folder_path)
         make_dirs(self.mat_folder_path)
 
     def delivery_task(self, target_folder, time_str):
@@ -707,6 +701,8 @@ class Server:
                 self.status_dict['assigned_sessions'].remove(session)
             if session in self.status_dict['current_sessions']:
                 del self.status_dict['current_sessions'][session]
+            if session in self.sessions_dict:
+                del self.sessions_dict[session]
 
         keys = list(self.status_dict['finished_sessions'].keys())
         for key in keys:
@@ -743,7 +739,7 @@ class Server:
                      create=True, exclude=self.excluded_folder, purge=purge)
         make_dirs(p_join(self.factory_folder, 'Output'))
 
-    def cleanSyncConflictState(self):
+    def clean_sync_conflict(self):
         states = [f for f in os.listdir(self.server_folder) if f.endswith(
             ".json") if f.startswith(self.host_name)]
         for s in states:
