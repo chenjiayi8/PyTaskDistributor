@@ -13,7 +13,7 @@ from dateutil import parser
 import pandas as pd
 import tabulate as tb
 
-from PyTaskDistributor.util.json import read_json_to_df
+from PyTaskDistributor.util.json import read_json_to_df2 as read_json_to_df
 from PyTaskDistributor.util.others import print_table
 
 

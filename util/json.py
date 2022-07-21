@@ -35,6 +35,16 @@ def write_json_from_df(path, df):
                           round(m_time.timestamp())))
 
 
+def write_json_from_df2(path, df):
+    with open(path, "w") as outfile:
+        json.dump(df.to_json(orient='records', lines=True).splitlines(),
+                  outfile, indent=2)
+    m_time = datetime.fromtimestamp(os.path.getmtime(path))
+    now_time = datetime.now()
+    os.utime(path, times=(round(now_time.timestamp()),
+                          round(m_time.timestamp())))
+
+
 def read_json_to_df(path):
     try:
         with open(path, 'r') as f:
@@ -47,6 +57,24 @@ def read_json_to_df(path):
     except Exception:
         print('Error to read_json_to_df: {}'.format(path))
         return None
+
+
+def read_json_to_df2(path):
+    try:
+        df_raw = pd.read_json(path, orient='records')
+        if len(df_raw.columns) > 1:
+            return read_json_to_df(path)
+
+        dfs = []
+        for i in range(len(df_raw)):
+            json_dict = custom_decoder.decode(df_raw.iloc[i, 0])
+            df_temp = pd.DataFrame(json_dict, index=[i])
+            dfs.append(df_temp)
+        return pd.concat(dfs)
+    except Exception:
+        print('Error to read_json_to_df2: {}'.format(path))
+        return None
+
 
 def read_json_to_dict(path):
     try:

@@ -28,7 +28,8 @@ import psutil
 from PyTaskDistributor.core.session import Session
 from PyTaskDistributor.util.extract import extract_between
 from PyTaskDistributor.util.json import (
-    read_json_to_df, read_json_to_dict, write_json_from_dict)
+        read_json_to_df2 as read_json_to_df, read_json_to_dict,
+        write_json_from_dict)
 from PyTaskDistributor.util.others import (
     get_file_suffix, get_latest_file_in_folder, get_process_cpu,
     get_process_mem, get_process_list, make_dirs, get_num_processor,

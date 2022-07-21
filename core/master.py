@@ -22,8 +22,9 @@ import numpy as np
 import pandas as pd
 
 from PyTaskDistributor.util.extract import extract_between
-from PyTaskDistributor.util.json import (read_json_to_df,
-                                         read_json_to_dict, write_json_from_df)
+from PyTaskDistributor.util.json import (
+        read_json_to_df2 as read_json_to_df, read_json_to_dict,
+        write_json_from_df2 as write_json_from_df)
 from PyTaskDistributor.util.monitor import Monitor
 from PyTaskDistributor.util.others import (sleep_mins, update_xlsx_file,
                                            get_uuid, delete_file, send_email,
