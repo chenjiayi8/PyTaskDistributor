@@ -365,8 +365,14 @@ class Server:
             sessions = os.listdir(self.mat_folder_path)
             finished_sessions = []
             for session in sessions:
-                if not isfile(p_join(self.mat_folder_path, session,
-                                     'data', 'final.mat')):
+                data_folder = p_join(self.mat_folder_path, session, 'data')
+                result_json = get_latest_file_in_folder(data_folder, '.json')
+                if result_json is None:
+                    continue
+                result = read_json_to_dict(p_join(data_folder, result_json))
+                if result is None:
+                    continue
+                if result['Finished'] != 1:
                     continue
                 key = self.task_time_str + '_' + session
                 if key not in self.status_dict['finished_sessions']:
@@ -596,8 +602,6 @@ class Server:
             key = session[underline_positions[1] + 1:]
             if key in self.status_dict['current_sessions']:
                 del self.status_dict['current_sessions'][key]
-            if key in self.status_dict['assigned_sessions']:
-                self.status_dict['assigned_sessions'].remove(key)
             if key in self.current_sessions:
                 del self.current_sessions[key]
 
@@ -805,12 +809,4 @@ class Server:
 
 
 if __name__ == '__main__':
-    from PyTaskDistributor.util.config import get_host_name, read_config
-
-    config_path = os.path.join(os.getcwd(), 'config.txt')
-    config = read_config(config_path)
-    hostname = get_host_name()
-    setup = config[hostname]
-    obj = Server(setup, debug=True)
-    obj.main()
     pass

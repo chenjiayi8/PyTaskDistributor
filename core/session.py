@@ -101,7 +101,10 @@ class Session:
                     self.write_log("kill {} with pid {}".
                                    format(self.name, self.pid))
                     self.pid = -1
-                    self.eng = None  # garbage collection
+                    try:
+                        self.eng = None  # garbage collection
+                    except Exception:
+                        pass
                 else:
                     self.write_log("Cannot kill {} with pid {}"
                                    .format(self.name, self.pid))
@@ -114,9 +117,6 @@ class Session:
                 trace_back_obj = sys.exc_info()[2]
                 traceback.print_tb(trace_back_obj)
                 pass
-
-        if self.name in self.server.current_sessions:
-            del self.server.current_sessions[self.name]
 
     def create_matlab_eng(self, option=None):
         os.chdir(self.factory_folder)
