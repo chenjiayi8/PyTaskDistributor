@@ -21,7 +21,7 @@ setup['hostname'] = 'cmmb01';
 obj = Master(setup)
 obj.update_server_list(10000)
 #obj.workload_balance()
-# obj.removeFinishedTask()
+obj.remove_finished_task()
 # obj.printProgress()
 #obj.main()
 obj.generate_manual_tasks()

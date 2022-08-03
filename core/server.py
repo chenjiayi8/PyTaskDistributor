@@ -142,6 +142,21 @@ class Server:
             traceback.print_tb(trace_back_obj)
             need_assistance = True
         return need_assistance
+    
+    def choose_task(self, task_list):
+        outputs = []
+        for task in task_list:
+            df = self.get_task_table(task, unfinished=True)  # check new task
+            if df is None:
+                continue
+            if len(df) > 0:
+                outputs.append((df, task))
+
+        if len(outputs) > 0:
+            df, task = random.choice(outputs)
+            return df, task
+        else:
+            return None, None
 
     def on_interval(self):
         self.manual_remove_task()
@@ -177,21 +192,17 @@ class Server:
             task_list.remove(clean_task)
 
         task_list = list(filter(self.validedTask, task_list))
-
-        if len(task_list) > 0:
+        df, task = self.choose_task(task_list)
+        if df is not None:
             self.status_dict_cleaner(reset=True)
-            # work on one task per cycle
-            task = random.choice(task_list)
             # announce the start of simulation
             self.print("Working on {}".format(task))
             self.update_folder_paths(task)  # paths for output
             self.on_start_task()
-            df = self.get_task_table(task, unfinished=True)  # check new task
-            if df is not None:
-                df = self.remove_finished_inputs(df)
-                sessions = self.create_sessions(df, task)
-                sessions = self.workload_balance(sessions)
-                self.run_sessions(sessions)
+            df = self.remove_finished_inputs(df)
+            sessions = self.create_sessions(df, task)
+            sessions = self.workload_balance(sessions)
+            self.run_sessions(sessions)
         else:  # clean if no task at all
             self.status_dict_cleaner(reset=False)
 
@@ -323,15 +334,16 @@ class Server:
     def mark_finished_session(self, sessions):
         if len(sessions) > 0:
             target_sessions = []
-            target_mat_paths = []
+            target_json_paths = []
             sessions_temp = []
             for session in sessions:
                 key = self.task_time_str + '_' + session
                 if key not in self.status_dict['finished_sessions']:
-                    mat_folder = p_join(self.mat_folder_path, session, 'data')
-                    mat_path = get_latest_file_in_folder(mat_folder, '.mat')
-                    if mat_path:
-                        target_mat_paths.append(mat_path)
+                    data_folder = p_join(self.mat_folder_path, session,
+                                         'data')
+                    json_path = get_latest_file_in_folder(data_folder, '.json')
+                    if json_path:
+                        target_json_paths.append(json_path)
                         target_sessions.append(session)
                     else:
                         log_file = p_join(self.mat_folder_path,
@@ -342,10 +354,12 @@ class Server:
                             msg = {'Finished': 1, 'err_msg': '|'.join(lines)}
                             self.status_dict['finished_sessions'][key] = msg
 
-            for i in range(len(target_mat_paths)):
-                obj = Session(self, target_sessions[i], target_mat_paths[i],
+            for i in range(len(target_json_paths)):
+                json_path = target_json_paths[i]
+                mat_path = json_path[:-5] + '.mat'
+                obj = Session(self, target_sessions[i], mat_path,
                               self.task_time_str)
-                json_path = target_mat_paths[i][:-4] + '.json'
+
                 if isfile(json_path):
                     output = obj.read_output(json_file=json_path)
                     if output is not None:
