@@ -142,7 +142,7 @@ class Server:
             traceback.print_tb(trace_back_obj)
             need_assistance = True
         return need_assistance
-    
+
     def choose_task(self, task_list):
         outputs = []
         for task in task_list:
@@ -191,20 +191,21 @@ class Server:
             os.unlink(p_join(self.new_task_folder, clean_task))
             task_list.remove(clean_task)
 
-        task_list = list(filter(self.validedTask, task_list))
-        df, task = self.choose_task(task_list)
-        if df is not None:
-            self.status_dict_cleaner(reset=True)
-            # announce the start of simulation
-            self.print("Working on {}".format(task))
-            self.update_folder_paths(task)  # paths for output
-            self.on_start_task()
-            df = self.remove_finished_inputs(df)
-            sessions = self.create_sessions(df, task)
-            sessions = self.workload_balance(sessions)
-            self.run_sessions(sessions)
-        else:  # clean if no task at all
-            self.status_dict_cleaner(reset=False)
+        if self.has_suffient_resources():
+            task_list = list(filter(self.validedTask, task_list))
+            df, task = self.choose_task(task_list)
+            if df is not None:
+                self.status_dict_cleaner(reset=True)
+                # announce the start of simulation
+                self.print("Working on {}".format(task))
+                self.update_folder_paths(task)  # paths for output
+                self.on_start_task()
+                df = self.remove_finished_inputs(df)
+                sessions = self.create_sessions(df, task)
+                sessions = self.workload_balance(sessions)
+                self.run_sessions(sessions)
+            else:  # clean if no task at all
+                self.status_dict_cleaner(reset=False)
 
         # wait for the starting of simulation
         sleep_mins(1)
@@ -225,8 +226,6 @@ class Server:
             self.status_dict['finished_sessions'].clear()
 
     def on_start_task(self):
-        if int(self.status_dict['num_running']) == 0:
-            self.prepare_factory()
         sessions = self.get_finished_sessions()
         if sessions:
             self.mark_finished_session(sessions)
@@ -503,34 +502,50 @@ class Server:
 
         return sessions
 
-    def deal_with_failed_session(self, name):
+    def clean_session_state(self, session):
+        if session in self.status_dict['current_sessions']:
+            del self.status_dict['current_sessions'][session]
+        if session in self.current_sessions:
+            del self.current_sessions[session]
+        if session in self.sessions_dict:
+            del self.sessions_dict[session]
+
+    def deal_with_failed_session(self, session):
         self.status_dict['msg'].append(
-            '{} failed on {}'.format(name, datetime.now()))
-        if name in self.status_dict['current_sessions']:
-            del self.status_dict['current_sessions'][name]
-        if name in self.current_sessions:
-            del self.current_sessions[name]
-        if name in self.sessions_dict:
-            del self.sessions_dict[name]
+            '{} failed on {}'.format(session, datetime.now()))
+        self.clean_session_state(session)
 
     def none(self, msg):
         self.print(msg)
         return None
 
+    def false(self, msg):
+        self.print(msg)
+        return False
+
+    def clean_current_sessions(self, sessions):
+        for session in sessions:
+            self.clean_session_state(session)
+
+    def has_suffient_resources(self):
+        if self.status_dict['CPU_total'] > self.CPU_max:
+            return self.false("CPU overflow")
+        if self.status_dict['MEM_total'] > self.MEM_max:
+            return self.false("MEM overflow")
+        return True
+
     def workload_balance(self, sessions):
-        d = self.status_dict
-        if d['CPU_total'] > self.CPU_max:
-            return self.none("CPU overflow")
-        if d['MEM_total'] > self.MEM_max:
-            return self.none("MEM overflow")
         if len(sessions) == 0:
             return self.none("Zero task")
-        num_target = 2
+
         num_default = 2
         num_current = len(self.current_sessions)
         if num_current == 0:
             num_target = 4
+        else:
+            num_target = 2
 
+        d = self.status_dict
         if d['num_running'] > 0:
             try:
                 cpu_available = d['CPU_max'] - d['CPU_total']
@@ -570,27 +585,35 @@ class Server:
                 self.print("Process for {} is killed".format(k))
 
     def run_sessions(self, sessions):
-        if sessions is not None:
-            # record pid first
-            valided_sessions = []
-            for k, s in sessions.items():
-                exitcode = s.create_matlab_eng()
-                if exitcode == 0:
-                    valided_sessions.append(s)
-                    self.sessions_dict[k] = s
-                    self.status_dict['current_sessions'][k] = \
-                        {'pid': s.pid, 'cpu': 0.0, 'mem': 0.0,
-                         'zombie': 0}
+        if sessions is None:
+            self.print("0 sessions are running from this cycle")
+            return
+        if len(sessions) == 0:
+            self.print("0 sessions are running from this cycle")
+            return
+        if int(self.status_dict['num_running']) == 0:
+            self.prepare_factory()
 
-            # run the session
-            for s in valided_sessions:
-                s.main()
+        # record pid first
+        valided_sessions = []
+        for k, s in sessions.items():
+            exitcode = s.create_matlab_eng()
+            if exitcode == 0:
+                valided_sessions.append(s)
+                self.sessions_dict[k] = s
+                self.status_dict['current_sessions'][k] = \
+                    {'pid': s.pid, 'cpu': 0.0, 'mem': 0.0,
+                     'zombie': 0}
 
-            # go back to default_folder
-            self.print(
-                "{} sessions are running from this cycle"
-                .format(len(sessions)))
-            os.chdir(self.default_folder)
+        # run the session
+        for s in valided_sessions:
+            s.main()
+
+        # go back to default_folder
+        self.print(
+            "{} sessions are running from this cycle"
+            .format(len(sessions)))
+        os.chdir(self.default_folder)
 
     def get_finished_session_key(self, session):
         task_list = self.get_task_list()
