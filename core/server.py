@@ -28,13 +28,13 @@ import psutil
 from PyTaskDistributor.core.session import Session
 from PyTaskDistributor.util.extract import extract_between
 from PyTaskDistributor.util.json import (
-        read_json_to_df2 as read_json_to_df, read_json_to_dict,
-        write_json_from_dict)
+    read_json_to_df2 as read_json_to_df, read_json_to_dict,
+    write_json_from_dict)
 from PyTaskDistributor.util.others import (
     get_file_suffix, get_latest_file_in_folder, get_process_cpu,
     get_process_mem, get_process_list, make_dirs, get_num_processor,
     sleep_mins
-    )
+)
 
 
 class Server:
@@ -386,6 +386,8 @@ class Server:
                 result = read_json_to_dict(p_join(data_folder, result_json))
                 if result is None:
                     continue
+                if 'Finished' not in result:
+                    continue
                 if result['Finished'] != 1:
                     continue
                 key = self.task_time_str + '_' + session
@@ -431,8 +433,8 @@ class Server:
                     if err_json is not None:
                         err_msg = read_json_to_dict(err_json)
                         self.status_dict['msg'].append(
-                                '{} has err msg:\n{}'.format(
-                                        s, err_msg['err_msg']))
+                            '{} has err msg:\n{}'.format(
+                                s, err_msg['err_msg']))
                     if task_progresses[s]['latest'] is None:
                         task_progresses[s]['latest'] = latest
                         task_progresses[s][name] = p_join(folder, s)
@@ -837,7 +839,7 @@ class Server:
                     del self.status_dict['current_sessions'][k]
                 if k in self.sessions_dict:
                     self.sessions_dict[k].clean_workspace(
-                            'remove_redistributed_task')
+                        'remove_redistributed_task')
                     self.sessions_dict[k].delete_relevent_files()
                     del self.sessions_dict[k]
                 else:
