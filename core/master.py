@@ -376,6 +376,10 @@ class Master:
             folder=self.finished_task_folder, ending='.done')
         task_list += self.get_task_list(
             folder=self.finished_task_folder, ending='.delete')
+        task_list = self.get_task_list(
+            folder=self.finished_task_folder, ending='.done.json')
+        task_list += self.get_task_list(
+            folder=self.finished_task_folder, ending='.delete.json')
         for task in task_list:
             task_time_str = extract_between(task, 'TaskList_', '.')[0]
             json_name = 'TaskList_' + task_time_str + '.json'
