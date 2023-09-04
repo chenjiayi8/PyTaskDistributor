@@ -59,7 +59,7 @@ class Monitor:
     def print_progress(self, num_mins=5):
         clear_console()
         print("Updated on {} and will reload in {} mins".format(
-                parse_time(datetime.now()), num_mins))
+            parse_time(datetime.now()), num_mins))
         self.print_task_progress()
         return self.print_server_progress()
 
@@ -95,8 +95,8 @@ class Monitor:
             updated_time_str = parse_time(updated_time)
             data = [task[:-5], num_task, num_assigned, num_running,
                     num_finished, updated_time_str]
-            df_tasks = df_tasks.append(pd.DataFrame(data=[data],
-                                                    columns=self.columns_task))
+            df_tasks = pd.concat([df_tasks, pd.DataFrame(data=[data],
+                                 columns=self.columns_task)])
         print_table(df_tasks)
 
     def print_server_progress(self):
@@ -104,8 +104,8 @@ class Monitor:
         df = pd.DataFrame(columns=self.columns_server)
         for server in self.master.server_list:
             data = [server[k] for k in self.columns_server]
-            df = df.append(pd.DataFrame(data=[data],
-                                        columns=self.columns_server))
+            df = pd.concat([df, pd.DataFrame(data=[data],
+                            columns=self.columns_server)])
         df['updated_time'] = df['updated_time'].apply(parse_time)
         df = df.fillna(0)
         columns_new = [a + '(%)' if is_server_state(a) else a
