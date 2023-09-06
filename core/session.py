@@ -91,32 +91,40 @@ class Session:
             self.terminated = True
 
     def __del__(self):
-        if self.process is not None:
-            self.process.terminate()
-            self.write_log("process for {} terminated".format(self.name))
-        if self.pid != -1:  # kill directly
-            try:  # try to kill
-                exitcode = os.system("kill -9 {}".format(self.pid))
-                if exitcode == 0:
-                    self.write_log("kill {} with pid {}".
-                                   format(self.name, self.pid))
-                    self.pid = -1
-                    try:
-                        self.eng = None  # garbage collection
-                    except Exception:
-                        pass
-                else:
-                    self.write_log("Cannot kill {} with pid {}"
-                                   .format(self.name, self.pid))
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except Exception:
-                self.write_log(('Failed to kill session {} with pid {}, '
-                               'received message:\n {}').format(
-                        self.name, self.pid, sys.exc_info()))
-                trace_back_obj = sys.exc_info()[2]
-                traceback.print_tb(trace_back_obj)
-                pass
+        # killed or not initialised
+        if self.pid == -1:
+            return
+
+        # matlab eng api
+        try:
+            self.eng.quit()
+            self.pid = -1
+            self.eng = None  # garbage collection
+        except Exception:
+            self.write_log("Cannot quit matlab_eng for {} ".format(self.name))
+            pass
+
+        # kill via terminal
+        try:
+            exitcode = os.system("kill -9 {}".format(self.pid))
+            if exitcode == 0:
+                self.write_log("kill {} with pid {}".
+                               format(self.name, self.pid))
+                self.pid = -1
+                self.eng = None  # garbage collection
+            else:
+                self.write_log("Cannot kill {} with pid {}"
+                               .format(self.name, self.pid))
+
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            self.write_log(('Failed to kill session {} with pid {}, '
+                           'received message:\n {}').format(
+                self.name, self.pid, sys.exc_info()))
+            trace_back_obj = sys.exc_info()[2]
+            traceback.print_tb(trace_back_obj)
+            pass
 
     def create_matlab_eng(self, option=None):
         os.chdir(self.factory_folder)
