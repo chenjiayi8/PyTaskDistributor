@@ -421,7 +421,7 @@ class Server:
                 if task_progresses[s]['finished']:
                     continue
                 data_folder = p_join(folder, s, 'data')
-                if isfile(p_join(data_folder, 'final.mat')):
+                if isfile(p_join(data_folder, 'final.json')):
                     task_progresses[s]['finished'] = True
                     task_progresses[s]['latest'] = p_join(data_folder,
                                                           'final.mat')
