@@ -28,11 +28,11 @@ def getLibTrackingObj():
     importedLibs = {}
     for name in libNames:
         importedLibs[name] = {
-                'path': './PyTaskDistributor/core/{}.py'.format(name),
-                'lastModifiedTime': 0,
-                'obj': importlib.import_module(
-                        'PyTaskDistributor.core.{}'.format(name))
-                }
+            'path': './PyTaskDistributor/core/{}.py'.format(name),
+            'lastModifiedTime': 0,
+            'obj': importlib.import_module(
+                'PyTaskDistributor.core.{}'.format(name))
+        }
 
     for name, lib in importedLibs.items():
         importedLibs[name]['lastModifiedTime'] =\
@@ -123,7 +123,7 @@ def wait_changes(args):
         watching_id = watching_check.index(True)
         watching_folder = extract_after(sys.argv[watching_id], '-w=.')
         print('Waiting max 30mins for the change of folder .{}'.format(
-                watching_folder))
+            watching_folder))
         watching_folder = watching_folder.split(os.path.sep)
         watching_folder = os.path.join(os.getcwd(), *watching_folder)
         time_interval_mins = 10/60  # check every 10 seconds
@@ -153,14 +153,20 @@ def update_xlsx_file(path_xlsx, df, sheet_name='Sheet1'):
     if not os.path.isfile(path_xlsx):
         df.to_excel(path_xlsx, index=False)
     else:
-        book = load_workbook(path_xlsx)
-        writer = pd.ExcelWriter(path_xlsx, engine='openpyxl')
-        writer.book = book
-        writer.sheets = {ws.title: ws for ws in book.worksheets}
-        empty_sheet_exclude_headers(writer.book[sheet_name])
-        df.to_excel(writer, sheet_name=sheet_name,
-                    startrow=1, header=False, index=False)
-        writer.save()
+        writer = pd.ExcelWriter(path_xlsx, engine='openpyxl',
+                                mode='a', if_sheet_exists='replace')
+        writer.workbook = load_workbook(path_xlsx)
+        worksheet = writer.sheets[sheet_name]
+        empty_sheet_exclude_headers(worksheet)
+        df2 = df.reset_index(drop=True)
+        for row_index, row in df2.iterrows():
+            for col_index in range(len(df2.columns)):
+                column = df2.columns[col_index]
+                if row[column] != "":
+                    worksheet.cell(row_index+2, col_index+1).value = \
+                        str(row[column])
+
+        writer.close()
 
 
 def mark_finished_tasks(task_table, results, task_id):
