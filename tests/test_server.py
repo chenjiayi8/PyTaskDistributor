@@ -15,22 +15,3 @@ hostname = get_host_name()
 setup = config[hostname]
 setup['hostname'] = 'cmmb01'
 obj = Server(setup, debug=True)
-#obj.purge_factory()
-obj.main()
-# obj.status_dict['CPU_total'] = 50.0
-# obj.status_dict['MEM_total'] = 50.0
-# obj.prepareFactory()
-# taskList = obj.getTaskList()
-# task = taskList[0]
-# obj.updateFolderPaths(task)#paths for output
-# df = obj.getTaskTable(task)# chec
-# df = obj.removeFinishedInputs(df)
-# sessions = obj.createSessions(df)
-# sessions = obj.workloadBalance(sessions)
-# obj.runSessions(sessions)
-# keys = list(obj.sessionsDict.keys())
-# session = obj.sessionsDict[keys[0]]
-# for i in range(10):
-#    time.sleep(30)
-#    obj.updateSessionsStatus()
-# obj.removeFinishedTask()
