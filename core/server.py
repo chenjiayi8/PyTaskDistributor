@@ -119,7 +119,7 @@ class Server:
 
     def kill_all_sessions(self):
         # kill all matlab processes
-        os.system("kill -9 $(pgrep -f 'MATLAB -mvmInputPipe')")
+        os.system("kill -9 $(pgrep -f 'MATLAB -layeredTransport')")
 
     def main(self):
         num_min = random.randint(2, 4)
