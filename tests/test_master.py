@@ -15,8 +15,5 @@ config = read_config(config_path)
 hostname = get_host_name()
 setup = config[hostname]
 setup['hostname'] = 'cmmb01'
-# setup['order'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
-# setup['delivery'] = '/home/frank/LinuxWorkFolder/TranReNu/MC3DVersion3.3_Git/'
-# setup['factory'] = '/home/frank/LocalWorkFolder/TranReNu/MC3DVersion3.3_Git/'
 obj = Master(setup)
 obj.update_server_list(10000)
