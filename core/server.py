@@ -668,7 +668,7 @@ class Server:
 
             if s.has_finished():
                 s.output = s.read_output()
-            if s.output != -1:  # remove session
+            if s.output != -1:  # has output, remove session
                 key = self.get_finished_session_key(k)
                 if key:
                     self.status_dict['finished_sessions'][key] = s.output
