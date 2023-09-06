@@ -275,7 +275,7 @@ class Server:
             if k in self.sessions_dict:
                 # delete session because of being zombie
                 self.sessions_dict[k].clean_workspace('being zombie')
-                del self.sessions_dict[k]
+                self.remove_from_sessions_dict(k)
             if k in self.current_sessions:
                 del self.current_sessions[k]
             if k in self.status_dict['current_sessions']:
@@ -511,8 +511,7 @@ class Server:
             del self.status_dict['current_sessions'][session]
         if session in self.current_sessions:
             del self.current_sessions[session]
-        if session in self.sessions_dict:
-            del self.sessions_dict[session]
+        self.remove_from_sessions_dict(session)
 
     def deal_with_failed_session(self, session):
         self.status_dict['msg'].append(
@@ -647,6 +646,10 @@ class Server:
             if key in self.current_sessions:
                 del self.current_sessions[key]
 
+    def remove_from_sessions_dict(self, session):
+        if session in self.sessions_dict:
+            del self.sessions_dict[session]
+
     def update_sessions_status(self):
         keys = list(self.sessions_dict.keys())
         self.print("Update {} sessions status".format(len(keys)))
@@ -661,7 +664,7 @@ class Server:
                 if k in self.status_dict['current_sessions']:
                     del self.status_dict['current_sessions'][k]
                 self.sessions_dict[k].clean_workspace('exiting with error')
-                del self.sessions_dict[k]
+                self.remove_from_sessions_dict(k)
 
             if s.has_finished():
                 s.output = s.read_output()
@@ -679,7 +682,7 @@ class Server:
                     # delete session because of finished
                     self.sessions_dict[k].clean_workspace('finished')
                     self.sessions_dict[k].post_process()
-                    del self.sessions_dict[k]
+                    self.remove_from_sessions_dict(k)
 
     def remove_finished_task(self):
         task_list = self.get_task_list(folder=self.finished_task_folder)
@@ -747,8 +750,7 @@ class Server:
                 self.status_dict['assigned_sessions'].remove(session)
             if session in self.status_dict['current_sessions']:
                 del self.status_dict['current_sessions'][session]
-            if session in self.sessions_dict:
-                del self.sessions_dict[session]
+            self.remove_from_sessions_dict(session)
 
         keys = list(self.status_dict['finished_sessions'].keys())
         for key in keys:
@@ -843,7 +845,7 @@ class Server:
                     self.sessions_dict[k].clean_workspace(
                         'remove_redistributed_task')
                     self.sessions_dict[k].delete_relevent_files()
-                    del self.sessions_dict[k]
+                    self.remove_from_sessions_dict(k)
                 else:
                     # create a session to delete_relevent_files
                     s = Session(self, k, None, self.task_time_str)
