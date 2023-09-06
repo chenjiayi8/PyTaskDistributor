@@ -25,7 +25,7 @@ import dirsync
 import numpy as np
 import psutil
 
-from PyTaskDistributor.core.session import Session
+
 from PyTaskDistributor.util.extract import extract_between
 from PyTaskDistributor.util.json import (
     read_json_to_df2 as read_json_to_df, read_json_to_dict,
@@ -35,6 +35,8 @@ from PyTaskDistributor.util.others import (
     get_process_mem, get_process_list, make_dirs, get_num_processor,
     sleep_mins
 )
+
+from PyTaskDistributor.core.session import Session
 
 
 class Server:
