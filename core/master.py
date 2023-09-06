@@ -437,7 +437,8 @@ class Master:
         new_json_name = p_join(self.new_task_folder, json_name)
         modified_time = os.path.getmtime(self.task_file_path)
         parameter_table = pd.read_excel(
-            self.task_file_path, sheet_name='ParameterRange')
+            self.task_file_path, sheet_name='ParameterRange',
+            engine='openpyxl')
         parameter_names = list(parameter_table.columns)
         num_total_task = 1
         for name in parameter_names:
@@ -460,14 +461,17 @@ class Master:
                         for i in range(len(combinations))]
         task_table = pd.DataFrame(data=combinations, columns=columns)
         task_table_old = pd.read_excel(self.task_file_path,
-                                       sheet_name='Sheet1')
+                                       sheet_name='Sheet1',
+                                       engine='openpyxl')
         columns_old = list(task_table_old.columns)
         for c in columns_old:
             if c not in task_table.columns:
                 task_table[c] = ''
         task_table.loc[:, 'UUID'] = task_table.loc[:, 'UUID'].apply(get_uuid)
         update_xlsx_file(self.task_file_path, task_table)
-        task_table = pd.read_excel(self.task_file_path, sheet_name='Sheet1')
+        task_table = pd.read_excel(self.task_file_path,
+                                   sheet_name='Sheet1',
+                                   engine='openpyxl')
         new_xlsx_name = p_join(self.main_folder, 'Output',
                                'TaskList_' + last_modified_time_str + '.xlsx')
         output_folder = p_join(self.main_folder, 'Output',
