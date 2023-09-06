@@ -14,17 +14,15 @@ import time
 import traceback
 import dirsync
 from datetime import datetime
-# from distutils.dir_util import copy_tree
 from glob import glob
-# from PyTaskDistributor.util.extract import extractAfter
-from multiprocessing import Process
+from threading import Thread
 from os.path import basename, isdir, isfile, join as p_join
 
 import matlab.engine
 
 from PyTaskDistributor.util.json import read_json_to_dict
 from PyTaskDistributor.util.others import (
-        get_file_suffix, get_latest_file_in_folder, make_dirs, get_process_cpu)
+    get_file_suffix, get_latest_file_in_folder, make_dirs, get_process_cpu)
 
 
 class Session:
@@ -340,7 +338,7 @@ class Session:
         if len(target) == 0:
             target = 'run'
         # call function by string
-        self.process = Process(target=getattr(self, target))
+        self.process = Thread(target=getattr(self, target))
         self.write_log("Process to run Function {} of {} is created"
                        .format(target, self.name))
         self.process.start()
