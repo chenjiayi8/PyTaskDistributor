@@ -265,21 +265,13 @@ class Session:
         mat_file = self.get_mat_output()
         if json_file is None:
             return False
-        if '-err.json' in json_file:
-            if mat_file is None:
-                return True  # only has err json
-            elif self.file_not_updating(mat_file, 60):
-                return True
-            else:
-                return False
         if mat_file is None:
-            return False
-        if not self.file_not_updating(mat_file, 60):
             return False
         if basename(json_file).lower() == 'final.json':
             return True
-        else:
-            return False
+        if '-err.json' in json_file:
+            return True
+        return False
 
     def run_matlab_unfinished_task(self):
         time.sleep(random.randint(1, 30))
