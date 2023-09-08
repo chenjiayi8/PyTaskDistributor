@@ -84,8 +84,6 @@ class Session:
             else:
                 self.write_log('clean_workspace called for {}'
                                .format(self.name))
-
-            self.__del__()
             self.terminated = True
 
     def __del__(self):
@@ -96,33 +94,13 @@ class Session:
         # matlab eng api
         try:
             self.eng.quit()
-            self.pid = -1
-            self.eng = None  # garbage collection
         except Exception:
             self.write_log("Cannot quit matlab_eng for {} ".format(self.name))
             pass
 
-        # kill via terminal
-        try:
-            exitcode = os.system("kill -9 {}".format(self.pid))
-            if exitcode == 0:
-                self.write_log("kill {} with pid {}".
-                               format(self.name, self.pid))
-                self.pid = -1
-                self.eng = None  # garbage collection
-            else:
-                self.write_log("Cannot kill {} with pid {}"
-                               .format(self.name, self.pid))
-
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except Exception:
-            self.write_log(('Failed to kill session {} with pid {}, '
-                           'received message:\n {}').format(
-                self.name, self.pid, sys.exc_info()))
-            trace_back_obj = sys.exc_info()[2]
-            traceback.print_tb(trace_back_obj)
-            pass
+        # garbage collection
+        self.pid = -1
+        self.eng = None
 
     def create_matlab_eng(self, option=None):
         os.chdir(self.factory_folder)
