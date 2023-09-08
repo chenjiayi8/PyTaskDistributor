@@ -332,11 +332,10 @@ class Server:
 
         return num_assigned
 
-    def mark_finished_session(self, sessions):
+    def mark_finished_sessions(self, sessions):
         if len(sessions) > 0:
             target_sessions = []
             target_json_paths = []
-            sessions_temp = []
             for session in sessions:
                 key = self.task_time_str + '_' + session
                 if key not in self.status_dict['finished_sessions']:
@@ -360,21 +359,9 @@ class Server:
                 mat_path = json_path[:-5] + '.mat'
                 obj = Session(self, target_sessions[i], mat_path,
                               self.task_time_str)
-
-                if isfile(json_path):
-                    output = obj.read_output(json_file=json_path)
-                    if output is not None:
-                        key = self.task_time_str + '_' + target_sessions[i]
-                        self.status_dict['finished_sessions'][key] = output
-                    else:
-                        obj.main(target='mark_finished_session')
-                        sessions_temp.append(obj)
-                else:
-                    obj.main(target='mark_finished_session')
-                    sessions_temp.append(obj)
-
-            for session in sessions_temp:
-                session.process.join()
+                output = obj.read_output(json_file=json_path)
+                key = self.task_time_str + '_' + target_sessions[i]
+                self.status_dict['finished_sessions'][key] = output
 
     def get_finished_sessions(self):
         if isdir(self.mat_folder_path):
