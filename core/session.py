@@ -263,8 +263,6 @@ class Session:
         self.write_log("run_matlab_new_task with input {}".format(self.input))
         self.eng.MatlabToPyRunNewTasks(self.input, nargout=0)
         self.write_log("run_matlab_new_task finished")
-        output = self.read_output()
-        return output
 
     def run_matlab_task(self):
         os.chdir(self.factory_folder)
