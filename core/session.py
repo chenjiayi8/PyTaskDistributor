@@ -267,24 +267,10 @@ class Session:
         input_type = type(self.input)
         self.write_log("run_matlab_task for {}".format(self.name))
         if input_type is str:
-            output = self.run_matlab_unfinished_task()
+            self.run_matlab_unfinished_task()
         else:
-            output = self.run_matlab_new_task()
-        self.write_log("Getting output for {}".format(self.name))
-        source_folder = p_join(self.factory_folder, 'Output', self.name)
-        mat_folder = p_join(source_folder, 'data')
-        mat_path = get_latest_file_in_folder(mat_folder)
-        if mat_path is not None:
-            output['File'] = basename(mat_path)
-        else:
-            output['File'] = 'None'
-            with open(self.logFile, 'rt') as f:
-                lines = f.read().splitlines()
-                lines = lines[1:]
-                output['err_msg'] = '|'.join(lines)
-
-        self.post_process()
-        self.output = output
+            self.run_matlab_new_task()
+        self.write_log("run_matlab_task for {} done".format(self.name))
 
     def post_process(self):
         self.write_log("post_process started for {}".format(self.name))
