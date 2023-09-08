@@ -306,11 +306,13 @@ class Session:
         # write last log in task result folder
         self.logFile = p_join(self.mat_folder_path,
                               self.name, self.name + '.txt')
-        self.write_log("post_process finished for {}".format(self.name))
-        # write last log in deliveried folder
+        self.write_log(
+            "post_process finished for {} in simulation folder".format(self.name))
+        # write last log in delivery folder
         self.logFile = p_join(self.delivery_folder_path,
                               self.name, self.name + '.txt')
-        self.write_log("post_process finished for {}".format(self.name))
+        self.write_log(
+            "post_process finished for {} in delivery folder".format(self.name))
 
     def main(self, target=''):
         if len(target) == 0:
