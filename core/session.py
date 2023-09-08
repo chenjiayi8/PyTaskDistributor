@@ -241,11 +241,16 @@ class Session:
         mat_file = self.get_mat_output()
         if json_file is None:
             return False
+        if '-err.json' in json_file:
+            return True
         if mat_file is None:
             return False
-        if basename(json_file).lower() == 'final.json':
-            return True
-        if '-err.json' in json_file:
+        if basename(json_file).lower() != 'final.json':
+            return False
+        result = self.read_output(json_file)
+        if 'Finished' not in result:
+            return False
+        if result['Finished'] == 1.0:
             return True
         return False
 
