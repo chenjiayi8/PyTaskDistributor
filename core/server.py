@@ -148,7 +148,7 @@ class Server:
     def choose_task(self, task_list):
         outputs = []
         for task in task_list:
-            df = self.get_task_table(task, unfinished=True)  # check new task
+            df = self.get_task_table(task)
             if df is None:
                 continue
             if len(df) > 0:
@@ -438,14 +438,7 @@ class Server:
     def remove_finished_inputs(self, df):
         if len(df) == 0:
             return df
-        make_dirs(self.mat_folder_path)  # create if doest not exist
-        finished_sessions = self.get_finished_sessions()
-        unwanted_inputs = []
-        for session in finished_sessions:
-            if session in df.index:
-                unwanted_inputs.append(session)
-        df2 = df.drop(unwanted_inputs)
-        return df2
+        return df[df['Finished'] != 1]
 
     def is_running(self, session):
         if session not in self.sessions_dict:
@@ -458,6 +451,8 @@ class Server:
                 return True
 
     def create_sessions(self, df, task):
+        if len(df) == 0:
+            return None
         task_progress = self.get_task_progresses(df)
         columns = list(df.columns)
         input_columns = []
@@ -525,7 +520,7 @@ class Server:
         return True
 
     def workload_balance(self, sessions):
-        if len(sessions) == 0:
+        if sessions is None or len(sessions) == 0:
             return self.none("Zero task")
 
         num_default = 2
