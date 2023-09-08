@@ -230,7 +230,7 @@ class Server:
     def on_start_task(self):
         sessions = self.get_finished_sessions()
         if sessions:
-            self.mark_finished_session(sessions)
+            self.mark_finished_sessions(sessions)
             self.write_server_status()
         # remove finished sessions from current sessions
         self.remove_finished_sessions()
