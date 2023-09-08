@@ -164,7 +164,7 @@ def update_xlsx_file(path_xlsx, df, sheet_name='Sheet1'):
                 column = df2.columns[col_index]
                 if row[column] != "":
                     worksheet.cell(row_index+2, col_index+1).value = \
-                        str(row[column])
+                        row[column]
 
         writer.close()
 
