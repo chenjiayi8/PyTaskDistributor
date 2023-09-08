@@ -136,40 +136,6 @@ class Session:
 
         return exitcode
 
-    def get_simulation_output(self):
-        os.chdir(self.factory_folder)
-        self.write_log("Loading {}".format(self.input))
-        self.eng.postProcessHandlesV2(self.input, nargout=0)
-        output = self.read_output()
-        if output['Finished'] == 1.0:
-            output['File'] = basename(self.input)
-        else:
-            msg = "Mark {} with err message {}" \
-                .format(self.input, output['err_msg'])
-            self.write_log(msg)
-        self.eng.exit()
-        os.chdir(self.default_folder)
-        #        for k, v in output:
-        #            self.output[k] = v
-        self.output = output
-
-    def mark_finished_session(self):
-        try:
-            self.server.current_sessions[self.name] = 1
-            self.write_log("Marking on {}".format(self.name))
-            self.get_simulation_output()
-            self.server.current_sessions[self.name] = self.output
-            self.write_log("Finishing marking {}".format(self.name))
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except Exception:
-            self.write_log("Need assistance for unexpected error:\n {}"
-                           .format(sys.exc_info()))
-            trace_back_obj = sys.exc_info()[2]
-            traceback.print_tb(trace_back_obj)
-            self.write_log(traceback.format_exc())
-            self.server.deal_with_failed_session(self.name)
-
     def delivery_task(self, target_folder):
         self.write_log("delivery_task started for {}".format(self.name))
         target_folder = os.path.normpath(target_folder)
