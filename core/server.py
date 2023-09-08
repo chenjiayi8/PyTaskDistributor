@@ -826,12 +826,12 @@ class Server:
                 if k in self.sessions_dict:
                     self.sessions_dict[k].clean_workspace(
                         'remove_redistributed_task')
-                    self.sessions_dict[k].delete_relevent_files()
+                    self.sessions_dict[k].delete_relevant_files()
                     self.remove_from_sessions_dict(k)
                 else:
-                    # create a session to delete_relevent_files
+                    # create a session to delete_relevant_files
                     s = Session(self, k, None, self.task_time_str)
-                    s.delete_relevent_files()
+                    s.delete_relevant_files()
 
 
 if __name__ == '__main__':

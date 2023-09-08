@@ -188,12 +188,12 @@ class Session:
                     shutil.copyfile(item, path_new)
         self.write_log("delivery_task finished for {}".format(self.name))
 
-    def delete_relevent_files(self):
+    def delete_relevant_files(self):
         delivery_folder = p_join(self.mat_folder_path, self.name)
         factory_folder = p_join(self.factory_folder, 'Output', self.name)
-        self.server.clean_folder(delivery_folder, 'delete_relevent_files',
+        self.server.clean_folder(delivery_folder, 'delete_relevant_files',
                                  delete=True)
-        self.server.clean_folder(factory_folder, 'delete_relevent_files',
+        self.server.clean_folder(factory_folder, 'delete_relevant_files',
                                  delete=True)
 
     def get_output(self, suffix):
