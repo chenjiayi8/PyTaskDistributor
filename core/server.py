@@ -368,19 +368,19 @@ class Server:
             sessions = os.listdir(self.mat_folder_path)
             finished_sessions = []
             for session in sessions:
+                key = self.task_time_str + '_' + session
+                if key in self.status_dict['finished_sessions']:
+                    continue
                 data_folder = p_join(self.mat_folder_path, session, 'data')
                 result_json = get_latest_file_in_folder(data_folder, '.json')
                 if result_json is None:
                     continue
-                result = read_json_to_dict(p_join(data_folder, result_json))
+                result = read_json_to_dict(result_json)
                 if result is None:
                     continue
                 if 'Finished' not in result:
                     continue
-                if result['Finished'] != 1:
-                    continue
-                key = self.task_time_str + '_' + session
-                if key not in self.status_dict['finished_sessions']:
+                if result['Finished'] == 1:
                     finished_sessions.append(session)
             return finished_sessions
         else:
