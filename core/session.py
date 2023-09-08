@@ -325,10 +325,8 @@ class Session:
 
     def run(self):
         try:
-            self.server.current_sessions[self.name] = 1
             self.write_log("Working on {}".format(self.name))
             self.run_matlab_task()
-            self.server.current_sessions[self.name] = self.output
             self.write_log("Finishing {}".format(self.name))
         except (KeyboardInterrupt, SystemExit):
             self.clean_workspace('killed by user or at exit')
