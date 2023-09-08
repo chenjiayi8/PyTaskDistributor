@@ -196,15 +196,16 @@ class Session:
         self.server.clean_folder(factory_folder, 'delete_relevent_files',
                                  delete=True)
 
-    def get_json_output(self):
+    def get_output(self, suffix):
         data_folder = p_join(self.working_folder, 'data')
-        json_file = get_latest_file_in_folder(data_folder, '.json')
-        return json_file
+        output_file = get_latest_file_in_folder(data_folder, suffix)
+        return output_file
+
+    def get_json_output(self):
+        return self.get_output('.json')
 
     def get_mat_output(self):
-        data_folder = p_join(self.working_folder, 'data')
-        mat_file = get_latest_file_in_folder(data_folder, '.mat')
-        return mat_file
+        return self.get_output('.mat')
 
     def read_output(self, json_file=None):
         if json_file is None:
