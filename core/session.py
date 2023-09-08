@@ -256,8 +256,6 @@ class Session:
         self.eng.MatlabToPyRunUnfinishedTasks([self.input, self.logFile],
                                               nargout=0)
         self.write_log("run_matlab_unfinished_task finished")
-        output = self.read_output()
-        return output
 
     def run_matlab_new_task(self):
         self.write_log("run_matlab_new_task with input {}".format(self.input))
