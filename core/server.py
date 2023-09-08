@@ -13,14 +13,10 @@ import shutil
 import sys
 import traceback
 from collections import OrderedDict
-# import time
 from datetime import datetime
-# from distutils.dir_util import copy_tree
 from glob import glob
-from multiprocessing import Manager
 from os.path import isdir, isfile, join as p_join
 
-# import matlab.engine
 import dirsync
 import numpy as np
 import psutil
@@ -68,8 +64,6 @@ class Server:
         self.delivery_folder_path = ''
         self.mat_folder_path = ''
         self.task_time_str = ''
-        self.manager = Manager()
-        self.current_sessions = self.manager.dict()
         self.sessions_dict = {}
         self.status_names = ['CPU_total', 'MEM_total',
                              'CPU_matlab', 'MEM_matlab']
@@ -276,8 +270,6 @@ class Server:
                 # delete session because of being zombie
                 self.sessions_dict[k].clean_workspace('being zombie')
                 self.remove_from_sessions_dict(k)
-            if k in self.current_sessions:
-                del self.current_sessions[k]
             if k in self.status_dict['current_sessions']:
                 del self.status_dict['current_sessions'][k]
 
@@ -491,8 +483,6 @@ class Server:
     def clean_session_state(self, session):
         if session in self.status_dict['current_sessions']:
             del self.status_dict['current_sessions'][session]
-        if session in self.current_sessions:
-            del self.current_sessions[session]
         self.remove_from_sessions_dict(session)
 
     def deal_with_failed_session(self, session):
@@ -524,7 +514,7 @@ class Server:
             return self.none("Zero task")
 
         num_default = 2
-        num_current = len(self.current_sessions)
+        num_current = len(self.status_dict['current_sessions'].keys())
         if num_current == 0:
             num_target = 4
         else:
@@ -625,8 +615,6 @@ class Server:
             key = session[underline_positions[1] + 1:]
             if key in self.status_dict['current_sessions']:
                 del self.status_dict['current_sessions'][key]
-            if key in self.current_sessions:
-                del self.current_sessions[key]
 
     def remove_from_sessions_dict(self, session):
         if session in self.sessions_dict:
@@ -643,8 +631,6 @@ class Server:
                 key = self.get_finished_session_key(k)
                 if key:
                     self.status_dict['finished_sessions'][key] = s.output
-                if k in self.current_sessions:
-                    del self.current_sessions[k]
                 if k in self.status_dict['assigned_sessions']:
                     self.status_dict['assigned_sessions'].remove(k)
                 if k in self.status_dict['current_sessions']:
@@ -726,8 +712,6 @@ class Server:
                 s.post_process()
 
         for session in df.index:
-            if session in self.current_sessions:
-                del self.current_sessions[session]
             if session in self.status_dict['assigned_sessions']:
                 self.status_dict['assigned_sessions'].remove(session)
             if session in self.status_dict['current_sessions']:
@@ -744,7 +728,6 @@ class Server:
         for session in unfinished_sessions:
             folder_path = p_join(output_folder, session)
             self.clean_folder(folder_path, 'cleanUnfinishedTasks', delete=True)
-        self.current_sessions.clear()
         self.status_dict['current_sessions'].clear()
 
     def clean_folder(self, folder_name, caller='', delete=False):
@@ -819,8 +802,6 @@ class Server:
                 key = self.get_finished_session_key(k)
                 if key in self.status_dict['finished_sessions']:
                     del self.status_dict['finished_sessions'][key]
-                if k in self.current_sessions:
-                    del self.current_sessions[k]
                 if k in self.status_dict['current_sessions']:
                     del self.status_dict['current_sessions'][k]
                 if k in self.sessions_dict:
