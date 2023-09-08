@@ -637,17 +637,6 @@ class Server:
         self.print("Update {} sessions status".format(len(keys)))
         for k in keys:
             s = self.sessions_dict[k]
-            if not s.process.is_alive():
-                if s.process.exitcode != 0:
-                    time_str = datetime.now().isoformat()
-                    self.status_dict['msg'].append(
-                        '{} {} is exited with exitcode {}\n'
-                        .format(time_str, k, s.process.exitcode))
-                if k in self.status_dict['current_sessions']:
-                    del self.status_dict['current_sessions'][k]
-                self.sessions_dict[k].clean_workspace('exiting with error')
-                self.remove_from_sessions_dict(k)
-
             if s.has_finished():
                 s.output = s.read_output()
             if s.output != -1:  # has output, remove session
@@ -665,6 +654,17 @@ class Server:
                     self.sessions_dict[k].clean_workspace('finished')
                     self.sessions_dict[k].post_process()
                     self.remove_from_sessions_dict(k)
+                    continue
+
+            if not s.process.is_alive():
+                time_str = datetime.now().isoformat()
+                self.status_dict['msg'].append(
+                    '{} {} is exited\n'
+                    .format(time_str, k))
+                if k in self.status_dict['current_sessions']:
+                    del self.status_dict['current_sessions'][k]
+                self.sessions_dict[k].clean_workspace('exiting with error')
+                self.remove_from_sessions_dict(k)
 
     def remove_finished_task(self):
         task_list = self.get_task_list(folder=self.finished_task_folder)
