@@ -19,9 +19,11 @@ from PyTaskDistributor.util.extract import extract_after
 
 
 def print_table(table):
-    msg = tb.tabulate(table.values, table.columns, tablefmt="grid")
-    print(msg)
-
+    if type(table) == pd.DataFrame:
+        msg = tb.tabulate(table.values, table.columns, tablefmt="grid")
+    else:
+        msg = tb.tabulate(table, tablefmt="grid")
+    return msg + '\n'
 
 def getLibTrackingObj():
     libNames = ['master', 'server']
