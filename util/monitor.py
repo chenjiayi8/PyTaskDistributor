@@ -23,13 +23,6 @@ def parse_time(t):
     return datetime.strftime(t, "%d/%m/%Y %H:%M:%S")
 
 
-def clear_console():
-    command = 'clear'
-    if os.name in ('nt', 'dos'):  # If Machine is running on Windows, use cls
-        command = 'cls'
-    os.system(command)
-
-
 def get_time_str(task):
     mark_location = [i for i, ltr in enumerate(task) if ltr == '_']
     dot_location = [i for i, ltr in enumerate(task) if ltr == '.']
