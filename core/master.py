@@ -33,21 +33,23 @@ from PyTaskDistributor.util.others import (sleep_mins, update_xlsx_file,
 
 class Master:
     def __init__(self, setup, fast_mode=False):
-        self.print("Master {} started".format(setup['hostname']))
         self.setup = setup
         self.default_folder = os.getcwd()
         self.fast_mode = fast_mode
-        self.server_folder = p_join(self.default_folder, 'Servers')
-        self.main_folder = self.setup['order']
-        self.new_task_folder = p_join(self.main_folder, 'NewTasks')
-        self.finished_task_folder = p_join(self.main_folder, 'FinishedTasks')
-        self.task_file_path = p_join(self.main_folder, 'TaskList.xlsx')
-        self.last_modified_time = ''
+        self.master_folder = p_join(self.default_folder, "Masters")
+        self.server_folder = p_join(self.default_folder, "Servers")
+        self.log_file = p_join(self.master_folder, f"{setup['hostname']}.txt")
         self.monitor = Monitor(self)
         self.server_list = []
         self.server_list_offline = {}
         self.server_list_overflow = {}
         self.msgs = []
+        self.initialise()
+
+    def initialise(self):
+        make_dirs(self.master_folder)
+        make_dirs(self.server_folder)
+        print("Master {} started".format(self.setup["hostname"]))
 
     def main(self):
         num_min = random.randint(3, 5)
