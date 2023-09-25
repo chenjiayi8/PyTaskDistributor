@@ -57,17 +57,17 @@ class Monitor:
         pass
 
     def print_progress(self, num_mins=5):
-        clear_console()
-        print("Updated on {} and will reload in {} mins".format(
-            parse_time(datetime.now()), num_mins))
-        self.print_task_progress()
-        return self.print_server_progress()
+        msg = "Updated on {} and will reload in {} mins \n".format(
+            parse_time(datetime.now()), num_mins)
+        msg += self.print_task_progress()
+        msg += self.print_server_progress()
+        return msg
 
     def print_task_progress(self):
         if self.master.fast_mode:
-            print("Task (Fast mode):")
+            msg = "Task (Fast mode):\n"
         else:
-            print("Task:")
+            msg = "Task:\n"
         df_tasks = pd.DataFrame(columns=self.columns_task)
         task_list = self.master.get_task_list()
         assigned_sessions = []
@@ -97,10 +97,11 @@ class Monitor:
                     num_finished, updated_time_str]
             df_tasks = pd.concat([df_tasks, pd.DataFrame(data=[data],
                                  columns=self.columns_task)])
-        print_table(df_tasks)
+        msg += print_table(df_tasks)
+        return msg
 
     def print_server_progress(self):
-        print("Server:")
+        msg = "Server:\n "
         df = pd.DataFrame(columns=self.columns_server)
         for server in self.master.server_list:
             data = [server[k] for k in self.columns_server]
@@ -131,8 +132,8 @@ class Monitor:
             for j in range(len(part)):
                 part[j] = [col_head[j]] + part[j]
             parts += part
-        table = tb.tabulate(parts, tablefmt="grid")
-        print(table)
+        msg += print_table(parts)
+        return msg
 
 
 if __name__ == '__main__':
