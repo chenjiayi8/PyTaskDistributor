@@ -91,7 +91,7 @@ class Master:
 
     def print_progress(self, num_min=5):
         msg = self.monitor.print_progress(num_min)
-        self.msgs.append(msg)
+        self.msgs.insert(0, msg)
 
     def print_msgs(self):
         with open(self.log_file, "w") as f:
