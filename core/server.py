@@ -40,36 +40,34 @@ from PyTaskDistributor.util.others import (
 
 class Server:
     def __init__(self, setup, debug=False):
-        self.print("Server {} started".format(setup['hostname']))
+        self.print("Server {} started".format(setup["hostname"]))
         self.setup = setup
         self.debug = debug
-        self.CPU_max = float(setup['CPU_max']) * 100
-        self.MEM_max = float(setup['MEM_max']) * 100
+        self.CPU_max = float(setup["CPU_max"]) * 100
+        self.MEM_max = float(setup["MEM_max"]) * 100
         self.default_folder = os.getcwd()
-        self.server_folder = p_join(self.default_folder, 'Servers')
-        self.host_name = self.setup['hostname']
-        self.user_name = os.popen('whoami').readline().split('\n')[0]
+        self.server_folder = p_join(self.default_folder, "Servers")
+        self.host_name = self.setup["hostname"]
+        self.user_name = os.popen("whoami").readline().split("\n")[0]
         if not isdir(self.server_folder):
             os.makedirs(self.server_folder)
-        self.status_file = p_join(self.server_folder,
-                                  self.host_name + '.json')
+        self.status_file = p_join(self.server_folder, self.host_name + ".json")
         if isfile(self.status_file):
             self.status_dict = read_json_to_dict(self.status_file)
         else:
             self.status_dict = OrderedDict()
         self.status_dict_clean_counter = 0
-        self.main_folder = self.setup['order']
-        self.factory_folder = self.setup['factory']
-        self.delivery_folder = self.setup['delivery']
-        self.new_task_folder = p_join(self.main_folder, 'NewTasks')
-        self.finished_task_folder = p_join(self.main_folder, 'FinishedTasks')
-        self.excluded_folder = ['Output', 'NewTasks', 'FinishedTasks', '.git']
-        self.delivery_folder_path = ''
-        self.mat_folder_path = ''
-        self.task_time_str = ''
+        self.main_folder = self.setup["order"]
+        self.factory_folder = self.setup["factory"]
+        self.delivery_folder = self.setup["delivery"]
+        self.new_task_folder = p_join(self.main_folder, "NewTasks")
+        self.finished_task_folder = p_join(self.main_folder, "FinishedTasks")
+        self.excluded_folder = ["Output", "NewTasks", "FinishedTasks", ".git"]
+        self.delivery_folder_path = ""
+        self.mat_folder_path = ""
+        self.task_time_str = ""
         self.sessions_dict = {}
-        self.status_names = ['CPU_total', 'MEM_total',
-                             'CPU_matlab', 'MEM_matlab']
+        self.status_names = ["CPU_total", "MEM_total", "CPU_matlab", "MEM_matlab"]
         self.status_record = np.zeros(len(self.status_names) + 1, dtype=float)
         self.initialise()
 
@@ -78,10 +76,10 @@ class Server:
         make_dirs(self.delivery_folder)
         if isfile(self.status_file):
             # update config
-            self.status_dict['name'] = self.host_name
-            self.status_dict['user'] = self.user_name
-            self.status_dict['CPU_max'] = self.CPU_max
-            self.status_dict['MEM_max'] = self.MEM_max
+            self.status_dict["name"] = self.host_name
+            self.status_dict["user"] = self.user_name
+            self.status_dict["CPU_max"] = self.CPU_max
+            self.status_dict["MEM_max"] = self.MEM_max
         else:
             self.reset_status_dict()
 
@@ -91,28 +89,28 @@ class Server:
 
     def reset_status_dict(self):
         self.status_dict = OrderedDict()
-        self.status_dict['name'] = self.host_name
-        self.status_dict['user'] = self.user_name
-        self.status_dict['CPU_max'] = self.CPU_max
-        self.status_dict['MEM_max'] = self.MEM_max
-        self.status_dict['msg'] = []
-        self.status_dict['assigned_sessions'] = []
-        self.status_dict['current_sessions'] = OrderedDict()
-        self.status_dict['finished_sessions'] = OrderedDict()
+        self.status_dict["name"] = self.host_name
+        self.status_dict["user"] = self.user_name
+        self.status_dict["CPU_max"] = self.CPU_max
+        self.status_dict["MEM_max"] = self.MEM_max
+        self.status_dict["msg"] = []
+        self.status_dict["assigned_sessions"] = []
+        self.status_dict["current_sessions"] = OrderedDict()
+        self.status_dict["finished_sessions"] = OrderedDict()
 
     @staticmethod
     def print(msg):
-        time_prefix = datetime.strftime(datetime.now(), '%Y-%m-%d %H:%M:%S.%f')
-        time_prefix = time_prefix[:-3] + '$ '
-        msg = time_prefix + msg + '\n'
+        time_prefix = datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S.%f")
+        time_prefix = time_prefix[:-3] + "$ "
+        msg = time_prefix + msg + "\n"
         print(msg)
 
     def kill_residual_sessions(self):
         # kill existing processes
-        for _, v in self.status_dict['current_sessions'].items():
-            os.system("kill -9 {}".format(v['pid']))
+        for _, v in self.status_dict["current_sessions"].items():
+            os.system("kill -9 {}".format(v["pid"]))
 
-        self.status_dict['current_sessions'].clear()
+        self.status_dict["current_sessions"].clear()
 
     def kill_all_sessions(self):
         # kill all matlab processes
@@ -135,8 +133,9 @@ class Server:
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception:
-            self.print("Need assistance for unexpected error:\n {}"
-                       .format(sys.exc_info()))
+            self.print(
+                "Need assistance for unexpected error:\n {}".format(sys.exc_info())
+            )
             trace_back_obj = sys.exc_info()[2]
             traceback.print_tb(trace_back_obj)
             need_assistance = True
@@ -161,8 +160,8 @@ class Server:
         self.manual_remove_task()
         self.remove_finished_task()
         task_list = self.get_task_list()
-        clean_task = self.host_name + '_clean.json'
-        purge_task = self.host_name + '_purge.json'
+        clean_task = self.host_name + "_clean.json"
+        purge_task = self.host_name + "_purge.json"
 
         # reset everything in factory
         if purge_task in task_list:
@@ -220,9 +219,9 @@ class Server:
         # no task for N cycles, clear status_dict
         if self.status_dict_clean_counter > 10:
             self.status_dict_clean_counter = 0
-            self.status_dict['assigned_sessions'].clear()
-            self.status_dict['current_sessions'].clear()
-            self.status_dict['finished_sessions'].clear()
+            self.status_dict["assigned_sessions"].clear()
+            self.status_dict["current_sessions"].clear()
+            self.status_dict["finished_sessions"].clear()
 
     def on_start_task(self):
         sessions = self.get_finished_sessions()
@@ -256,62 +255,62 @@ class Server:
 
     def get_processes(self):
         df = get_process_list()
-        df_user = df[df['User'] == self.user_name]
+        df_user = df[df["User"] == self.user_name]
         # only count matlab process opened by Python
-        df_matlab = df_user[df_user['Command'].apply(
-            lambda x: 'matlab -mvminputpipe' in x.lower())]
+        df_matlab = df_user[
+            df_user["Command"].apply(lambda x: "matlab -mvminputpipe" in x.lower())
+        ]
         return df, df_matlab
 
     def deal_with_zombie_sessions(self):
         zombie_sessions = []
-        for k, v in self.status_dict['current_sessions'].items():
-            if v['zombie'] > 20:
+        for k, v in self.status_dict["current_sessions"].items():
+            if v["zombie"] > 20:
                 zombie_sessions.append(k)
 
         for k in zombie_sessions:
             if k in self.sessions_dict:
                 # delete session because of being zombie
-                self.sessions_dict[k].clean_workspace('being zombie')
+                self.sessions_dict[k].clean_workspace("being zombie")
                 self.remove_from_sessions_dict(k)
-            if k in self.status_dict['current_sessions']:
-                del self.status_dict['current_sessions'][k]
+            if k in self.status_dict["current_sessions"]:
+                del self.status_dict["current_sessions"][k]
 
     def update_server_status(self):
         df, _ = self.get_processes()
-        self.status_dict['CPU_total'] = round(psutil.cpu_percent(interval=1),
-                                              2)
-        self.status_dict['MEM_total'] = round(sum(df['Mem']), 2)
-        self.status_dict['DISK_total'] = self.get_disk_usage_percent()
-        self.status_dict['num_assigned'] = self.get_num_assigned()
-        self.status_dict['num_finished'] = \
-            int(len(self.status_dict['finished_sessions']))
+        self.status_dict["CPU_total"] = round(psutil.cpu_percent(interval=1), 2)
+        self.status_dict["MEM_total"] = round(sum(df["Mem"]), 2)
+        self.status_dict["DISK_total"] = self.get_disk_usage_percent()
+        self.status_dict["num_assigned"] = self.get_num_assigned()
+        self.status_dict["num_finished"] = int(
+            len(self.status_dict["finished_sessions"])
+        )
 
         num_running = 0
         CPU_matlab = 0.0
         MEM_matlab = 0.0
-        for k in self.status_dict['current_sessions']:
-            s = self.status_dict['current_sessions'][k]
-            s['cpu'] = round(get_process_cpu(s['pid']), 2)
-            s['mem'] = round(get_process_mem(s['pid']), 2)
-            s['zombie'] = s['zombie'] + 1 if s['cpu'] < 10.0 else 0
+        for k in self.status_dict["current_sessions"]:
+            s = self.status_dict["current_sessions"][k]
+            s["cpu"] = round(get_process_cpu(s["pid"]), 2)
+            s["mem"] = round(get_process_mem(s["pid"]), 2)
+            s["zombie"] = s["zombie"] + 1 if s["cpu"] < 10.0 else 0
             num_running += 1
-            CPU_matlab += s['cpu']
-            MEM_matlab += s['mem']
+            CPU_matlab += s["cpu"]
+            MEM_matlab += s["mem"]
 
-        self.status_dict['num_running'] = num_running
-        self.status_dict['CPU_matlab'] = \
-            round(CPU_matlab/get_num_processor(), 2)
-        self.status_dict['MEM_matlab'] = MEM_matlab
-        self.status_dict['updated_time'] = datetime.now().isoformat()
+        self.status_dict["num_running"] = num_running
+        self.status_dict["CPU_matlab"] = round(CPU_matlab / get_num_processor(), 2)
+        self.status_dict["MEM_matlab"] = MEM_matlab
+        self.status_dict["updated_time"] = datetime.now().isoformat()
 
     @staticmethod
     def validedTask(task):  # skip these task
         task_lower = task.lower()
-        if task_lower.endswith('clean.json'):
+        if task_lower.endswith("clean.json"):
             return False
-        if task_lower.endswith('purge.json'):
+        if task_lower.endswith("purge.json"):
             return False
-        if 'sync-conflict' in task_lower:
+        if "sync-conflict" in task_lower:
             return False
         return True
 
@@ -322,7 +321,7 @@ class Server:
         for task in task_list:
             path = p_join(self.new_task_folder, task)
             df = read_json_to_df(path)
-            df_assigned = df[df['HostName'] == self.host_name]
+            df_assigned = df[df["HostName"] == self.host_name]
             num_assigned += len(df_assigned)
 
         return num_assigned
@@ -332,100 +331,104 @@ class Server:
             target_sessions = []
             target_json_paths = []
             for session in sessions:
-                key = self.task_time_str + '_' + session
-                if key not in self.status_dict['finished_sessions']:
-                    data_folder = p_join(self.mat_folder_path, session,
-                                         'data')
-                    json_path = get_latest_file_in_folder(data_folder, '.json')
+                key = self.task_time_str + "_" + session
+                if key not in self.status_dict["finished_sessions"]:
+                    data_folder = p_join(self.mat_folder_path, session, "data")
+                    json_path = get_latest_file_in_folder(data_folder, ".json")
                     if json_path:
                         target_json_paths.append(json_path)
                         target_sessions.append(session)
                     else:
-                        log_file = p_join(self.mat_folder_path,
-                                          session, session + '.txt')
-                        with open(log_file, 'rt') as f:
+                        log_file = p_join(
+                            self.mat_folder_path, session, session + ".txt"
+                        )
+                        with open(log_file, "rt") as f:
                             lines = f.read().splitlines()
                             lines = lines[1:]
-                            msg = {'Finished': 1, 'err_msg': '|'.join(lines)}
-                            self.status_dict['finished_sessions'][key] = msg
+                            msg = {"Finished": 1, "err_msg": "|".join(lines)}
+                            self.status_dict["finished_sessions"][key] = msg
 
             for i in range(len(target_json_paths)):
                 json_path = target_json_paths[i]
-                mat_path = json_path[:-5] + '.mat'
-                obj = Session(self, target_sessions[i], mat_path,
-                              self.task_time_str)
+                mat_path = json_path[:-5] + ".mat"
+                obj = Session(self, target_sessions[i], mat_path, self.task_time_str)
                 output = obj.read_output(json_file=json_path)
-                key = self.task_time_str + '_' + target_sessions[i]
-                self.status_dict['finished_sessions'][key] = output
+                key = self.task_time_str + "_" + target_sessions[i]
+                self.status_dict["finished_sessions"][key] = output
 
     def get_finished_sessions(self):
         if isdir(self.mat_folder_path):
             sessions = os.listdir(self.mat_folder_path)
             finished_sessions = []
             for session in sessions:
-                key = self.task_time_str + '_' + session
-                if key in self.status_dict['finished_sessions']:
+                key = self.task_time_str + "_" + session
+                if key in self.status_dict["finished_sessions"]:
                     continue
-                data_folder = p_join(self.mat_folder_path, session, 'data')
-                result_json = get_latest_file_in_folder(data_folder, '.json')
+                data_folder = p_join(self.mat_folder_path, session, "data")
+                result_json = get_latest_file_in_folder(data_folder, ".json")
                 if result_json is None:
                     continue
                 result = read_json_to_dict(result_json)
                 if result is None:
                     continue
-                if 'Finished' not in result:
+                if "Finished" not in result:
                     continue
-                if result['Finished'] == 1:
+                if result["Finished"] == 1:
                     finished_sessions.append(session)
             return finished_sessions
         else:
             return None
 
     def get_unfinished_sessions(self):
-        output_folder = p_join(self.factory_folder, 'Output')
+        output_folder = p_join(self.factory_folder, "Output")
         make_dirs(output_folder)
         unfinished_ss = os.listdir(output_folder)
-        unfinished_ss = [s for s in unfinished_ss if s.startswith('Task-')]
+        unfinished_ss = [s for s in unfinished_ss if s.startswith("Task-")]
         return unfinished_ss, output_folder
 
     def get_task_progresses(self, df):
         task_progresses = {}
         for index in df.index:
-            task_progresses[index] = {'finished': False,  'latest': None,
-                                      'factory': None, 'delivery': None}
-        output_folders = {'factory': p_join(self.factory_folder, 'Output'),
-                          'delivery': self.mat_folder_path}
+            task_progresses[index] = {
+                "finished": False,
+                "latest": None,
+                "factory": None,
+                "delivery": None,
+            }
+        output_folders = {
+            "factory": p_join(self.factory_folder, "Output"),
+            "delivery": self.mat_folder_path,
+        }
         for name, folder in output_folders.items():
             make_dirs(folder)
             sessions = os.listdir(folder)
             sessions = [s for s in sessions if s in df.index]
             for s in sessions:
-                if task_progresses[s]['finished']:
+                if task_progresses[s]["finished"]:
                     continue
-                data_folder = p_join(folder, s, 'data')
-                if isfile(p_join(data_folder, 'final.json')):
-                    task_progresses[s]['finished'] = True
-                    task_progresses[s]['latest'] = p_join(data_folder,
-                                                          'final.mat')
+                data_folder = p_join(folder, s, "data")
+                if isfile(p_join(data_folder, "final.json")):
+                    task_progresses[s]["finished"] = True
+                    task_progresses[s]["latest"] = p_join(data_folder, "final.mat")
                     task_progresses[s][name] = p_join(folder, s)
                 else:
-                    latest = get_latest_file_in_folder(data_folder, '.mat')
-                    err_json = get_latest_file_in_folder(data_folder,
-                                                         '-err.json')
+                    latest = get_latest_file_in_folder(data_folder, ".mat")
+                    err_json = get_latest_file_in_folder(data_folder, "-err.json")
                     if latest is None:
                         continue
                     if err_json is not None:
                         err_msg = read_json_to_dict(err_json)
-                        self.status_dict['msg'].append(
-                            '{} has err msg:\n{}'.format(
-                                s, err_msg['err_msg']))
-                    if task_progresses[s]['latest'] is None:
-                        task_progresses[s]['latest'] = latest
+                        self.status_dict["msg"].append(
+                            "{} has err msg:\n{}".format(s, err_msg["err_msg"])
+                        )
+                    if task_progresses[s]["latest"] is None:
+                        task_progresses[s]["latest"] = latest
                         task_progresses[s][name] = p_join(folder, s)
                     else:
-                        if os.path.getmtime(latest) > \
-                           os.path.getmtime(task_progresses[s]['latest']):
-                            task_progresses[s]['latest'] = latest
+                        if os.path.getmtime(latest) > os.path.getmtime(
+                            task_progresses[s]["latest"]
+                        ):
+                            task_progresses[s]["latest"] = latest
                             task_progresses[s][name] = p_join(folder, s)
 
         return task_progresses
@@ -433,7 +436,7 @@ class Server:
     def remove_finished_inputs(self, df):
         if len(df) == 0:
             return df
-        return df[df['Finished'] != 1]
+        return df[df["Finished"] != 1]
 
     def is_running(self, session):
         if session not in self.sessions_dict:
@@ -452,23 +455,25 @@ class Server:
         columns = list(df.columns)
         input_columns = []
         for c in columns:
-            if c.lower() != 'hostname':
+            if c.lower() != "hostname":
                 input_columns.append(c)
             else:
                 break
 
         def get_input(_input):
             _input = list(_input)
-            _input = [float(_input[i]) if i < len(_input) - 1
-                      else _input[i] for i in range(len(_input))]
+            _input = [
+                float(_input[i]) if i < len(_input) - 1 else _input[i]
+                for i in range(len(_input))
+            ]
             return _input
 
         sessions = {}
         for i in range(len(df)):
             session = df.index[i]
-            if not task_progress[session]['finished']:  # not finished
+            if not task_progress[session]["finished"]:  # not finished
                 if not self.is_running(session):  # not running now
-                    mat_path = task_progress[session]['latest']
+                    mat_path = task_progress[session]["latest"]
                     if mat_path is not None:  # Progress is saved
                         sessions[session] = Session(self, session, mat_path)
                     else:  # Nothing is saved or not started yet
@@ -476,7 +481,7 @@ class Server:
                         sessions[session] = Session(self, session, _input)
             else:
                 # finished but not delivered
-                if task_progress[session]['factory'] is not None:
+                if task_progress[session]["factory"] is not None:
                     time_str = self.get_time_str(task)
                     s = Session(self, session, None, time_str)
                     s.post_process()
@@ -484,13 +489,14 @@ class Server:
         return sessions
 
     def clean_session_state(self, session):
-        if session in self.status_dict['current_sessions']:
-            del self.status_dict['current_sessions'][session]
+        if session in self.status_dict["current_sessions"]:
+            del self.status_dict["current_sessions"][session]
         self.remove_from_sessions_dict(session)
 
     def deal_with_failed_session(self, session):
-        self.status_dict['msg'].append(
-            '{} failed on {}'.format(session, datetime.now()))
+        self.status_dict["msg"].append(
+            "{} failed on {}".format(session, datetime.now())
+        )
         self.clean_session_state(session)
 
     def none(self, msg):
@@ -506,9 +512,9 @@ class Server:
             self.clean_session_state(session)
 
     def has_suffient_resources(self):
-        if self.status_dict['CPU_total'] > self.CPU_max:
+        if self.status_dict["CPU_total"] > self.CPU_max:
             return self.false("CPU overflow")
-        if self.status_dict['MEM_total'] > self.MEM_max:
+        if self.status_dict["MEM_total"] > self.MEM_max:
             return self.false("MEM overflow")
         return True
 
@@ -517,20 +523,20 @@ class Server:
             return self.none("Zero task")
 
         num_default = 2
-        num_current = len(self.status_dict['current_sessions'].keys())
+        num_current = len(self.status_dict["current_sessions"].keys())
         if num_current == 0:
             num_target = 4
         else:
             num_target = 2
 
         d = self.status_dict
-        if d['num_running'] > 0:
+        if d["num_running"] > 0:
             try:
-                cpu_available = d['CPU_max'] - d['CPU_total']
-                cpu_per_task = d['CPU_matlab'] / d['num_running']
+                cpu_available = d["CPU_max"] - d["CPU_total"]
+                cpu_per_task = d["CPU_matlab"] / d["num_running"]
                 num_cpu = math.floor(cpu_available / cpu_per_task)
-                mem_available = d['MEM_max'] - d['MEM_total']
-                mem_per_task = d['MEM_matlab'] / d['num_running']
+                mem_available = d["MEM_max"] - d["MEM_total"]
+                mem_per_task = d["MEM_matlab"] / d["num_running"]
                 num_mem = math.floor(mem_available / mem_per_task)
                 num_target = min([num_cpu, num_mem])
                 if num_target > 4:  # Max add 4 per cycle
@@ -544,14 +550,14 @@ class Server:
         if num_target == 0:
             return self.none("Zero target")
         if len(sessions) > num_target:
-            is_unfinished_list = [[s[1].is_unfinished, s[0]]
-                                  for s in sessions.items()]
+            is_unfinished_list = [[s[1].is_unfinished, s[0]] for s in sessions.items()]
             random.shuffle(is_unfinished_list)
             is_unfinished_list = sorted(is_unfinished_list, reverse=True)
             sessions_new = {}
             for i in range(num_target):
-                sessions_new[is_unfinished_list[i][1]] = \
-                    sessions[is_unfinished_list[i][1]]
+                sessions_new[is_unfinished_list[i][1]] = sessions[
+                    is_unfinished_list[i][1]
+                ]
 
             return sessions_new
         else:
@@ -569,7 +575,7 @@ class Server:
         if len(sessions) == 0:
             self.print("0 sessions are running from this cycle")
             return
-        if int(self.status_dict['num_running']) == 0:
+        if int(self.status_dict["num_running"]) == 0:
             self.prepare_factory()
 
         # record pid first
@@ -579,18 +585,19 @@ class Server:
             if exitcode == 0:
                 valided_sessions.append(s)
                 self.sessions_dict[k] = s
-                self.status_dict['current_sessions'][k] = \
-                    {'pid': s.pid, 'cpu': 0.0, 'mem': 0.0,
-                     'zombie': 0}
+                self.status_dict["current_sessions"][k] = {
+                    "pid": s.pid,
+                    "cpu": 0.0,
+                    "mem": 0.0,
+                    "zombie": 0,
+                }
 
         # run the session
         for s in valided_sessions:
             s.main()
 
         # go back to default_folder
-        self.print(
-            "{} sessions are running from this cycle"
-            .format(len(sessions)))
+        self.print("{} sessions are running from this cycle".format(len(sessions)))
         os.chdir(self.default_folder)
 
     def get_finished_session_key(self, session):
@@ -599,25 +606,23 @@ class Server:
         for task in task_list:
             path = p_join(self.new_task_folder, task)
             df = read_json_to_df(path)
-            df = df.sort_values('Num')
-            df['UUID'] = df['UUID'].apply(str)
-            temp = list(
-                zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
-            index = ['-'.join(t) for t in temp]
+            df = df.sort_values("Num")
+            df["UUID"] = df["UUID"].apply(str)
+            temp = list(zip(["Task"] * len(df), df["Num"].apply(str), df["UUID"]))
+            index = ["-".join(t) for t in temp]
             if session in index:
                 time_str = self.get_time_str(task)
-                key = time_str + '_' + session
+                key = time_str + "_" + session
                 return key
         return None
 
     def remove_finished_sessions(self):
-        sessions = list(self.status_dict['finished_sessions'].keys())
+        sessions = list(self.status_dict["finished_sessions"].keys())
         for session in sessions:
-            underline_positions = [
-                i for i, ltr in enumerate(session) if ltr == '_']
-            key = session[underline_positions[1] + 1:]
-            if key in self.status_dict['current_sessions']:
-                del self.status_dict['current_sessions'][key]
+            underline_positions = [i for i, ltr in enumerate(session) if ltr == "_"]
+            key = session[underline_positions[1] + 1 :]
+            if key in self.status_dict["current_sessions"]:
+                del self.status_dict["current_sessions"][key]
 
     def remove_from_sessions_dict(self, session):
         if session in self.sessions_dict:
@@ -633,71 +638,70 @@ class Server:
             if s.output != -1:  # has output, remove session
                 key = self.get_finished_session_key(k)
                 if key:
-                    self.status_dict['finished_sessions'][key] = s.output
-                if k in self.status_dict['assigned_sessions']:
-                    self.status_dict['assigned_sessions'].remove(k)
-                if k in self.status_dict['current_sessions']:
-                    del self.status_dict['current_sessions'][k]
+                    self.status_dict["finished_sessions"][key] = s.output
+                if k in self.status_dict["assigned_sessions"]:
+                    self.status_dict["assigned_sessions"].remove(k)
+                if k in self.status_dict["current_sessions"]:
+                    del self.status_dict["current_sessions"][k]
                 if k in self.sessions_dict:
                     # delete session because of finished
-                    self.sessions_dict[k].clean_workspace('finished')
+                    self.sessions_dict[k].clean_workspace("finished")
                     self.sessions_dict[k].post_process()
                     self.remove_from_sessions_dict(k)
                     continue
 
             if not s.process.is_alive():
                 time_str = datetime.now().isoformat()
-                self.status_dict['msg'].append(
-                    '{} {} is exited\n'
-                    .format(time_str, k))
-                if k in self.status_dict['current_sessions']:
-                    del self.status_dict['current_sessions'][k]
-                self.sessions_dict[k].clean_workspace('exiting with error')
+                self.status_dict["msg"].append("{} {} is exited\n".format(time_str, k))
+                if k in self.status_dict["current_sessions"]:
+                    del self.status_dict["current_sessions"][k]
+                self.sessions_dict[k].clean_workspace("exiting with error")
                 self.remove_from_sessions_dict(k)
 
     def remove_finished_task(self):
         task_list = self.get_task_list(folder=self.finished_task_folder)
         task_list = list(filter(self.validedTask, task_list))
         task_list += self.get_task_list(
-            folder=self.finished_task_folder, ending=".done")
+            folder=self.finished_task_folder, ending=".done"
+        )
         for task in task_list:
             self.clean_task_trace(task)
 
     def manual_remove_task(self):
         task_list = self.get_task_list(
-            folder=self.finished_task_folder, ending=".delete")
+            folder=self.finished_task_folder, ending=".delete"
+        )
         for task in task_list:
             time_str = self.get_time_str(task)
-            task_folder = p_join(self.factory_folder, 'Output', time_str)
+            task_folder = p_join(self.factory_folder, "Output", time_str)
             self.clean_task_trace(task)
-            self.clean_folder(task_folder, 'manual remove_task', delete=True)
+            self.clean_folder(task_folder, "manual remove_task", delete=True)
 
     @staticmethod
     def get_time_str(task):
-        return extract_between(task, 'TaskList_', '.json')[0]
+        return extract_between(task, "TaskList_", ".json")[0]
 
     def update_folder_paths(self, task):
         time_str = self.get_time_str(task)
-        self.delivery_folder_path = p_join(
-            self.delivery_folder, 'Output', time_str)
-        self.mat_folder_path = p_join(self.factory_folder, 'Output', time_str)
+        self.delivery_folder_path = p_join(self.delivery_folder, "Output", time_str)
+        self.mat_folder_path = p_join(self.factory_folder, "Output", time_str)
         self.task_time_str = time_str
         make_dirs(self.mat_folder_path)
 
     def delivery_task(self, target_folder, time_str):
         target_folder = os.path.normpath(target_folder)
-        delivery_folder_path = p_join(self.delivery_folder, 'Output', time_str)
+        delivery_folder_path = p_join(self.delivery_folder, "Output", time_str)
         basename = os.path.basename(target_folder)
         target_folder += os.path.sep
-        item_list = glob(p_join(target_folder, '**'), recursive=True)
-        last_parts = [item.replace(target_folder, '') for item in item_list]
+        item_list = glob(p_join(target_folder, "**"), recursive=True)
+        last_parts = [item.replace(target_folder, "") for item in item_list]
         for i in range(len(item_list)):
             item = item_list[i]
             path_new = p_join(delivery_folder_path, basename, last_parts[i])
             if isdir(item):
                 make_dirs(path_new)
             if isfile(item):
-                if get_file_suffix(item).lower() != '.mat':
+                if get_file_suffix(item).lower() != ".mat":
                     shutil.copyfile(item, path_new)
 
     def clean_task_trace(self, task):
@@ -715,25 +719,25 @@ class Server:
                 s.post_process()
 
         for session in df.index:
-            if session in self.status_dict['assigned_sessions']:
-                self.status_dict['assigned_sessions'].remove(session)
-            if session in self.status_dict['current_sessions']:
-                del self.status_dict['current_sessions'][session]
+            if session in self.status_dict["assigned_sessions"]:
+                self.status_dict["assigned_sessions"].remove(session)
+            if session in self.status_dict["current_sessions"]:
+                del self.status_dict["current_sessions"][session]
             self.remove_from_sessions_dict(session)
 
-        keys = list(self.status_dict['finished_sessions'].keys())
+        keys = list(self.status_dict["finished_sessions"].keys())
         for key in keys:
             if time_str in key:
-                del self.status_dict['finished_sessions'][key]
+                del self.status_dict["finished_sessions"][key]
 
     def clean_unfinished_tasks(self):
         unfinished_sessions, output_folder = self.get_unfinished_sessions()
         for session in unfinished_sessions:
             folder_path = p_join(output_folder, session)
-            self.clean_folder(folder_path, 'cleanUnfinishedTasks', delete=True)
-        self.status_dict['current_sessions'].clear()
+            self.clean_folder(folder_path, "cleanUnfinishedTasks", delete=True)
+        self.status_dict["current_sessions"].clear()
 
-    def clean_folder(self, folder_name, caller='', delete=False):
+    def clean_folder(self, folder_name, caller="", delete=False):
         if isdir(folder_name):
             # remove all the content recursively
             self.print("Cleaning folder {} by {}".format(folder_name, caller))
@@ -760,10 +764,14 @@ class Server:
         make_dirs(p_join(self.factory_folder, "Output"))
 
     def clean_sync_conflict(self):
-        states = [f for f in os.listdir(self.server_folder) if f.endswith(
-            ".json") if f.startswith(self.host_name)]
+        states = [
+            f
+            for f in os.listdir(self.server_folder)
+            if f.endswith(".json")
+            if f.startswith(self.host_name)
+        ]
         for s in states:
-            if 'sync-conflict' in s:
+            if "sync-conflict" in s:
                 s_path = p_join(self.server_folder, s)
                 if isfile(s_path):
                     os.unlink(s_path)
@@ -774,23 +782,22 @@ class Server:
         task_list = [f for f in os.listdir(folder) if f.endswith(ending)]
         return task_list
 
-    def get_task_table(self, task, folder='', unfinished=False):
+    def get_task_table(self, task, folder="", unfinished=False):
         if len(folder) == 0:
             folder = self.new_task_folder
         input_path = p_join(folder, task)
         if isfile(input_path):
             df = read_json_to_df(input_path)
-            df = df.sort_values('Num')
-            df['UUID'] = df['UUID'].apply(str)
-            temp = list(
-                zip(['Task'] * len(df), df['Num'].apply(str), df['UUID']))
-            index = ['-'.join(t) for t in temp]
+            df = df.sort_values("Num")
+            df["UUID"] = df["UUID"].apply(str)
+            temp = list(zip(["Task"] * len(df), df["Num"].apply(str), df["UUID"]))
+            index = ["-".join(t) for t in temp]
             df.index = index
-            df = df.fillna('')
+            df = df.fillna("")
             if unfinished:
-                df = df.drop(df[df['Finished'] == 1].index)
-            df2 = df[df['HostName'] == self.host_name]
-            df3 = df[df['HostName'] != self.host_name]
+                df = df.drop(df[df["Finished"] == 1].index)
+            df2 = df[df["HostName"] == self.host_name]
+            df3 = df[df["HostName"] != self.host_name]
             self.update_assigned_task(df2)
             self.remove_redistributed_task(df3)
             return df2
@@ -799,21 +806,20 @@ class Server:
 
     def update_assigned_task(self, df):
         for k in df.index:
-            if k not in self.status_dict['assigned_sessions']:
-                self.status_dict['assigned_sessions'].append(k)
+            if k not in self.status_dict["assigned_sessions"]:
+                self.status_dict["assigned_sessions"].append(k)
 
     def remove_redistributed_task(self, df):
         for k in df.index:
-            if k in self.status_dict['assigned_sessions']:
-                self.status_dict['assigned_sessions'].remove(k)
+            if k in self.status_dict["assigned_sessions"]:
+                self.status_dict["assigned_sessions"].remove(k)
                 key = self.get_finished_session_key(k)
-                if key in self.status_dict['finished_sessions']:
-                    del self.status_dict['finished_sessions'][key]
-                if k in self.status_dict['current_sessions']:
-                    del self.status_dict['current_sessions'][k]
+                if key in self.status_dict["finished_sessions"]:
+                    del self.status_dict["finished_sessions"][key]
+                if k in self.status_dict["current_sessions"]:
+                    del self.status_dict["current_sessions"][k]
                 if k in self.sessions_dict:
-                    self.sessions_dict[k].clean_workspace(
-                        'remove_redistributed_task')
+                    self.sessions_dict[k].clean_workspace("remove_redistributed_task")
                     self.sessions_dict[k].delete_relevant_files()
                     self.remove_from_sessions_dict(k)
                 else:
@@ -822,5 +828,5 @@ class Server:
                     s.delete_relevant_files()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass
