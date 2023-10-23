@@ -15,24 +15,27 @@ import traceback
 from collections import OrderedDict
 from datetime import datetime
 from glob import glob
-from os.path import isdir, isfile, join as p_join
+from os.path import isdir, isfile
+from os.path import join as p_join
 
-import dirsync
 import numpy as np
 import psutil
 
-
-from PyTaskDistributor.util.extract import extract_between
-from PyTaskDistributor.util.json import (
-    read_json_to_df2 as read_json_to_df, read_json_to_dict,
-    write_json_from_dict)
-from PyTaskDistributor.util.others import (
-    get_file_suffix, get_latest_file_in_folder, get_process_cpu,
-    get_process_mem, get_process_list, make_dirs, get_num_processor,
-    sleep_mins
-)
-
 from PyTaskDistributor.core.session import Session
+from PyTaskDistributor.util.extract import extract_between
+from PyTaskDistributor.util.io import sync_folders
+from PyTaskDistributor.util.json import read_json_to_df2 as read_json_to_df
+from PyTaskDistributor.util.json import read_json_to_dict, write_json_from_dict
+from PyTaskDistributor.util.others import (
+    get_file_suffix,
+    get_latest_file_in_folder,
+    get_num_processor,
+    get_process_cpu,
+    get_process_list,
+    get_process_mem,
+    make_dirs,
+    sleep_mins,
+)
 
 
 class Server:
