@@ -751,9 +751,13 @@ class Server:
 
     def prepare_factory(self, purge=False):
         # purge=True will delete Output folder
-        dirsync.sync(self.main_folder, self.factory_folder, 'sync',
-                     create=True, exclude=self.excluded_folder, purge=purge)
-        make_dirs(p_join(self.factory_folder, 'Output'))
+        sync_folders(
+            self.main_folder,
+            self.factory_folder,
+            exclude=self.excluded_folder,
+            purge=purge,
+        )
+        make_dirs(p_join(self.factory_folder, "Output"))
 
     def clean_sync_conflict(self):
         states = [f for f in os.listdir(self.server_folder) if f.endswith(
