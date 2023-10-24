@@ -14,27 +14,26 @@ import sys
 import traceback
 from datetime import datetime
 from itertools import product as prod
-from os.path import isfile, join as p_join
+from os.path import isfile
+from os.path import join as p_join
 from pathlib import Path
 
-from dateutil import parser
 import numpy as np
 import pandas as pd
+from dateutil import parser
 
 from PyTaskDistributor.util.extract import extract_between
-from PyTaskDistributor.util.json import (
-    read_json_to_df2 as read_json_to_df,
-    read_json_to_dict,
-    write_json_from_df2 as write_json_from_df,
-)
+from PyTaskDistributor.util.json import read_json_to_df2 as read_json_to_df
+from PyTaskDistributor.util.json import read_json_to_dict
+from PyTaskDistributor.util.json import write_json_from_df2 as write_json_from_df
 from PyTaskDistributor.util.monitor import Monitor
 from PyTaskDistributor.util.others import (
+    delete_file,
+    get_uuid,
+    make_dirs,
+    send_email,
     sleep_mins,
     update_xlsx_file,
-    get_uuid,
-    delete_file,
-    send_email,
-    make_dirs,
 )
 
 
