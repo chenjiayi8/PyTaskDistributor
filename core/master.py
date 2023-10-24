@@ -49,6 +49,7 @@ class Master:
         self.main_folder = self.setup["order"]
         self.new_task_folder = p_join(self.main_folder, "NewTasks")
         self.finished_task_folder = p_join(self.main_folder, "FinishedTasks")
+        self.backup_task_folder = p_join(self.main_folder, "FinishedTasks", "Backup")
         self.task_file_path = p_join(self.main_folder, "TaskList.xlsx")
         self.last_modified_time = ""
         self.monitor = Monitor(self)
@@ -410,36 +411,40 @@ class Master:
                 path_done = p_join(self.finished_task_folder, task)
                 shutil.move(path, path_done)
 
-    def exist_task(self, json_name):
-        file_list = []
-        folder_list = [self.finished_task_folder, self.new_task_folder]
-        endings = ["json", "done", "delete"]
-        for folder in folder_list:
-            for ending in endings:
-                file_list += self.get_task_list(folder=folder, ending=ending)
-
-        return any([json_name in file for file in file_list])
-
-    def get_exist_task_path(self, json_name):
+    def get_existed_task(self):
         path_list = []
-        folder_list = [self.finished_task_folder, self.new_task_folder]
+        folder_list = [
+            self.finished_task_folder,
+            self.new_task_folder,
+            self.backup_task_folder,
+        ]
         endings = ["json", "done", "delete"]
         for folder in folder_list:
             for ending in endings:
                 file_list = self.get_task_list(folder=folder, ending=ending)
-                path_list += [
-                    p_join(folder, file) for file in file_list if json_name in file
-                ]
+                path_list += [p_join(folder, file) for file in file_list]
+        return path_list
 
+    def exist_task(self, task_name):
+        path_list = self.get_existed_task()
+        file_list = [Path(p).parts[-1] for p in path_list]
+        return any([task_name in file for file in file_list])
+
+    def get_exist_task_path(self, json_name):
+        path_list = self.get_existed_task()
+        path_list = [p for p in path_list if json_name in p]
         return path_list
 
     def generate_tasks(self):
+        if not isfile(self.task_file_path):
+            return
         self.last_modified_time = self.get_file_last_modified_time()
         last_modified_time_str = datetime.strftime(
             self.last_modified_time, "%Y%m%d_%H%M%S"
         )
-        json_name = "TaskList_" + last_modified_time_str + ".json"
-        if self.exist_task(json_name):  # already created
+        task_name = "TaskList_" + last_modified_time_str
+        json_name = task_name + ".json"
+        if self.exist_task(task_name):  # already created
             return
         new_json_name = p_join(self.new_task_folder, json_name)
         modified_time = os.path.getmtime(self.task_file_path)
@@ -506,19 +511,19 @@ class Master:
     def generate_manual_tasks(self):
         manual_folder = p_join(self.main_folder, "ManualTasks")
         manual_xlsx = p_join(manual_folder, "TaskList_manual.xlsx")
-        if isfile(manual_xlsx):
-            last_modified_time = self.get_file_last_modified_time(manual_xlsx)
-            last_modified_time_str = datetime.strftime(
-                last_modified_time, "%Y%m%d_%H%M%S"
-            )
-            json_name = "TaskList_" + last_modified_time_str + ".json"
-            if not self.exist_task(json_name):  # already created
-                print("Generating manual tasks")
-                new_json_name = p_join(self.new_task_folder, json_name)
-                df = pd.read_excel(manual_xlsx)
-                df = df.fillna("")
-                df.loc[:, "UUID"] = df.loc[:, "UUID"].apply(get_uuid)
-                write_json_from_df(new_json_name, df)
+        if not isfile(manual_xlsx):
+            return
+        last_modified_time = self.get_file_last_modified_time(manual_xlsx)
+        last_modified_time_str = datetime.strftime(last_modified_time, "%Y%m%d_%H%M%S")
+        task_name = "TaskList_" + last_modified_time_str
+        json_name = task_name + ".json"
+        if not self.exist_task(task_name):  # already created
+            print("Generating manual tasks")
+            new_json_name = p_join(self.new_task_folder, json_name)
+            df = pd.read_excel(manual_xlsx)
+            df = df.fillna("")
+            df.loc[:, "UUID"] = df.loc[:, "UUID"].apply(get_uuid)
+            write_json_from_df(new_json_name, df)
 
         manual_jsons = self.get_task_list(manual_folder)
         for task in manual_jsons:
