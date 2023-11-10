@@ -189,7 +189,7 @@ class Server:
             os.unlink(p_join(self.new_task_folder, clean_task))
             task_list.remove(clean_task)
 
-        if self.has_suffient_resources():
+        if self.has_sufficient_resources():
             task_list = list(filter(self.validedTask, task_list))
             df, task = self.choose_task(task_list)
             if df is not None:
@@ -511,7 +511,7 @@ class Server:
         for session in sessions:
             self.clean_session_state(session)
 
-    def has_suffient_resources(self):
+    def has_sufficient_resources(self):
         if self.status_dict["CPU_total"] > self.CPU_max:
             return self.false("CPU overflow")
         if self.status_dict["MEM_total"] > self.MEM_max:
