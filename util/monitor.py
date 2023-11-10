@@ -24,9 +24,9 @@ def parse_time(t):
 
 
 def get_time_str(task):
+    """Get the time string from task name."""
     mark_location = [i for i, ltr in enumerate(task) if ltr == "_"]
-    dot_location = [i for i, ltr in enumerate(task) if ltr == "."]
-    time_str = task[mark_location[0] + 1 : dot_location[-1]]
+    time_str = task[mark_location[0] + 1 :]
     return time_str
 
 
