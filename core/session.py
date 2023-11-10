@@ -12,17 +12,22 @@ import shutil
 import sys
 import time
 import traceback
-import dirsync
 from datetime import datetime
 from glob import glob
+from os.path import basename, isdir, isfile
+from os.path import join as p_join
 from threading import Thread
-from os.path import basename, isdir, isfile, join as p_join
 
+import dirsync
 import matlab.engine
 
 from PyTaskDistributor.util.json import read_json_to_dict
 from PyTaskDistributor.util.others import (
-    get_file_suffix, get_latest_file_in_folder, make_dirs, get_process_cpu)
+    get_file_suffix,
+    get_latest_file_in_folder,
+    get_process_cpu,
+    make_dirs,
+)
 
 
 class Session:
@@ -34,15 +39,13 @@ class Session:
         self.default_folder = server.default_folder
         self.main_folder = server.main_folder
         self.factory_folder = server.factory_folder
-        self.working_folder = p_join(self.factory_folder, 'Output', name)
+        self.working_folder = p_join(self.factory_folder, "Output", name)
         self.delivery_folder_path = server.delivery_folder_path
         if timestr is None:
             self.mat_folder_path = server.mat_folder_path
         else:  # finished session from another task
-            self.mat_folder_path = p_join(self.factory_folder,
-                                          'Output', timestr)
-        self.logFile = p_join(self.factory_folder, 'Output',
-                              name, name + '.txt')
+            self.mat_folder_path = p_join(self.factory_folder, "Output", timestr)
+        self.logFile = p_join(self.factory_folder, "Output", name, name + ".txt")
         self.process = None
         self.pid = -1
         self.eng = None
@@ -54,36 +57,39 @@ class Session:
         if not isfile(self.logFile):
             basedir = os.path.dirname(self.logFile)
             make_dirs(basedir)
-            with open(self.logFile, 'a'):  # touch file
+            with open(self.logFile, "a"):  # touch file
                 os.utime(self.logFile, None)
 
     def initialise(self):
         make_dirs(self.working_folder)
         self.create_log_file()
-        self.write_log("Session {} initialised at Server {}".format(self.name,
-                       self.server.host_name))
+        self.write_log(
+            "Session {} initialised at Server {}".format(
+                self.name, self.server.host_name
+            )
+        )
 
     def write_log(self, msg):
-        time_prefix = datetime.strftime(datetime.now(), '%Y-%m-%d %H:%M:%S.%f')
-        time_prefix = time_prefix[:-3] + '$ '
-        platform_prefix = 'Python: '
-        msg = time_prefix + platform_prefix + msg + '\n'
+        time_prefix = datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S.%f")
+        time_prefix = time_prefix[:-3] + "$ "
+        platform_prefix = "Python: "
+        msg = time_prefix + platform_prefix + msg + "\n"
         print(msg)
         try:
             if isfile(self.logFile):
-                with open(self.logFile, 'a+') as f:
+                with open(self.logFile, "a+") as f:
                     f.write(msg)
         except Exception:
             pass
 
-    def clean_workspace(self, caller=''):
+    def clean_workspace(self, caller=""):
         if not self.terminated:
             if len(caller) > 0:
-                self.write_log('clean_workspace called for {} because {}'
-                               .format(self.name, caller))
+                self.write_log(
+                    "clean_workspace called for {} because {}".format(self.name, caller)
+                )
             else:
-                self.write_log('clean_workspace called for {}'
-                               .format(self.name))
+                self.write_log("clean_workspace called for {}".format(self.name))
             self.terminated = True
 
     def __del__(self):
@@ -107,11 +113,10 @@ class Session:
         self.initialise()
         exitcode = 0
         if type(self.input) is str:
-            caller = 'old task'
+            caller = "old task"
         else:
-            caller = 'new task'
-        self.write_log("Creating matlab engine for {} {}"
-                       .format(caller, self.name))
+            caller = "new task"
+        self.write_log("Creating matlab engine for {} {}".format(caller, self.name))
         try:
             if option is None:
                 self.eng = matlab.engine.start_matlab()  # option: '-desktop'
@@ -119,15 +124,21 @@ class Session:
                 self.eng = matlab.engine.start_matlab(option)
 
             self.pid = int(self.eng.eval("feature('getpid')"))
-            self.write_log("Creating matlab engine for {} {} done with pid {}"
-                           .format(caller, self.name, self.pid))
+            self.write_log(
+                "Creating matlab engine for {} {} done with pid {}".format(
+                    caller, self.name, self.pid
+                )
+            )
         except (KeyboardInterrupt, SystemExit):
             exitcode = -1
             raise
         except Exception as e:
             exitcode = -2
-            self.write_log("Failed to create matlab engine with message:\n {}"
-                           .format(sys.exc_info()))
+            self.write_log(
+                "Failed to create matlab engine with message:\n {}".format(
+                    sys.exc_info()
+                )
+            )
             trace_back_obj = sys.exc_info()[2]
             traceback.print_tb(trace_back_obj)
             self.write_log(str(e))
@@ -141,37 +152,34 @@ class Session:
         target_folder = os.path.normpath(target_folder)
         base_name = basename(target_folder)
         target_folder += os.path.sep
-        item_list = glob(p_join(target_folder, '**'), recursive=True)
-        last_parts = [item.replace(target_folder, '') for item in item_list]
+        item_list = glob(p_join(target_folder, "**"), recursive=True)
+        last_parts = [item.replace(target_folder, "") for item in item_list]
         for i in range(len(item_list)):
             item = item_list[i]
-            path_new = p_join(self.delivery_folder_path,
-                              base_name, last_parts[i])
+            path_new = p_join(self.delivery_folder_path, base_name, last_parts[i])
             if isdir(item):
                 make_dirs(path_new)
             if isfile(item):
-                if get_file_suffix(item).lower() != '.mat':
+                if get_file_suffix(item).lower() != ".mat":
                     shutil.copyfile(item, path_new)
         self.write_log("delivery_task finished for {}".format(self.name))
 
     def delete_relevant_files(self):
         delivery_folder = p_join(self.mat_folder_path, self.name)
-        factory_folder = p_join(self.factory_folder, 'Output', self.name)
-        self.server.clean_folder(delivery_folder, 'delete_relevant_files',
-                                 delete=True)
-        self.server.clean_folder(factory_folder, 'delete_relevant_files',
-                                 delete=True)
+        factory_folder = p_join(self.factory_folder, "Output", self.name)
+        self.server.clean_folder(delivery_folder, "delete_relevant_files", delete=True)
+        self.server.clean_folder(factory_folder, "delete_relevant_files", delete=True)
 
     def get_output(self, suffix):
-        data_folder = p_join(self.working_folder, 'data')
+        data_folder = p_join(self.working_folder, "data")
         output_file = get_latest_file_in_folder(data_folder, suffix)
         return output_file
 
     def get_json_output(self):
-        return self.get_output('.json')
+        return self.get_output(".json")
 
     def get_mat_output(self):
-        return self.get_output('.mat')
+        return self.get_output(".mat")
 
     def read_output(self, json_file=None):
         if json_file is None:
@@ -208,25 +216,23 @@ class Session:
         mat_file = self.get_mat_output()
         if json_file is None:
             return False
-        if '-err.json' in json_file:
+        if "-err.json" in json_file:
             return True
         if mat_file is None:
             return False
-        if basename(json_file).lower() != 'final.json':
+        if basename(json_file).lower() != "final.json":
             return False
         result = self.read_output(json_file)
-        if 'Finished' not in result:
+        if "Finished" not in result:
             return False
-        if result['Finished'] == 1.0:
+        if result["Finished"] == 1.0:
             return True
         return False
 
     def run_matlab_unfinished_task(self):
         time.sleep(random.randint(1, 30))
-        self.write_log("run_matlab_unfinished_task with input {}"
-                       .format(self.input))
-        self.eng.MatlabToPyRunUnfinishedTasks([self.input, self.logFile],
-                                              nargout=0)
+        self.write_log("run_matlab_unfinished_task with input {}".format(self.input))
+        self.eng.MatlabToPyRunUnfinishedTasks([self.input, self.logFile], nargout=0)
         self.write_log("run_matlab_unfinished_task finished")
 
     def run_matlab_new_task(self):
@@ -247,37 +253,38 @@ class Session:
     def post_process(self):
         self.write_log("post_process started for {}".format(self.name))
         target_folder = p_join(self.mat_folder_path, self.name)
-        source_folder = p_join(self.factory_folder, 'Output', self.name)
+        source_folder = p_join(self.factory_folder, "Output", self.name)
         # copy simulation results to task result folder
-        dirsync.sync(source_folder, target_folder, 'sync', create=True)
+        dirsync.sync(source_folder, target_folder, "sync", create=True)
         # delivery everything excluding mat file
-        self.write_log('Ready to delivery result')
+        self.write_log("Ready to delivery result")
         time.sleep(3)
         self.delivery_task(target_folder)
-        self.server.clean_folder(source_folder, 'postProcess in Session',
-                                 delete=True)
+        self.server.clean_folder(source_folder, "postProcess in Session", delete=True)
         os.chdir(self.default_folder)
         # write last log in task result folder
-        self.logFile = p_join(self.mat_folder_path,
-                              self.name, self.name + '.txt')
+        self.logFile = p_join(self.mat_folder_path, self.name, self.name + ".txt")
         self.write_log(
-            "post_process finished for {} in simulation folder".format(self.name))
+            "post_process finished for {} in simulation folder".format(self.name)
+        )
         # write last log in delivery folder
-        self.logFile = p_join(self.delivery_folder_path,
-                              self.name, self.name + '.txt')
+        self.logFile = p_join(self.delivery_folder_path, self.name, self.name + ".txt")
         self.write_log(
-            "post_process finished for {} in delivery folder".format(self.name))
+            "post_process finished for {} in delivery folder".format(self.name)
+        )
 
-    def main(self, target=''):
+    def main(self, target=""):
         if len(target) == 0:
-            target = 'run'
+            target = "run"
         # call function by string
         self.process = Thread(target=getattr(self, target))
-        self.write_log("Process to run Function {} of {} is created"
-                       .format(target, self.name))
+        self.write_log(
+            "Process to run Function {} of {} is created".format(target, self.name)
+        )
         self.process.start()
-        self.write_log("Function {} of {} is running in background"
-                       .format(target, self.name))
+        self.write_log(
+            "Function {} of {} is running in background".format(target, self.name)
+        )
 
     def run(self):
         try:
@@ -285,11 +292,12 @@ class Session:
             self.run_matlab_task()
             self.write_log("Finishing {}".format(self.name))
         except (KeyboardInterrupt, SystemExit):
-            self.clean_workspace('killed by user or at exit')
+            self.clean_workspace("killed by user or at exit")
             raise
         except Exception as e:
-            self.write_log("Need assistance for unexpected error:\n {}"
-                           .format(sys.exc_info()))
+            self.write_log(
+                "Need assistance for unexpected error:\n {}".format(sys.exc_info())
+            )
             trace_back_obj = sys.exc_info()[2]
             traceback.print_tb(trace_back_obj)
             self.write_log(str(e))
@@ -297,5 +305,5 @@ class Session:
             self.server.deal_with_failed_session(self.name)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass
