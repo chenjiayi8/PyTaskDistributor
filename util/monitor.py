@@ -36,6 +36,7 @@ def get_duplicated_items(lst1, lst2):
 
 
 def is_server_state(_input):
+    """Check if the input is a server state."""
     return any(x in _input for x in ["CPU", "MEM", "DISK"])
 
 
