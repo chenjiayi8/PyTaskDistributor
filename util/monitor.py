@@ -117,10 +117,11 @@ class Monitor:
         msg += print_table(df_tasks)
         return msg
 
-    def print_server_progress(self):
+    def check_server_progress(self, servers: list):
+        """Check the progress of the server."""
         msg = "Server:\n "
         df = pd.DataFrame(columns=self.columns_server)
-        for server in self.master.server_list:
+        for server in servers:
             data = [server[k] for k in self.columns_server]
             df = pd.concat([df, pd.DataFrame(data=[data], columns=self.columns_server)])
         df["updated_time"] = df["updated_time"].apply(parse_time)
@@ -144,8 +145,8 @@ class Monitor:
             if len(df_temp.columns) < num_interval:
                 for p in part:
                     p.insert(0, "")
-            for j in range(len(part)):
-                part[j] = [col_head[j]] + part[j]
+            for j, p in enumerate(part):
+                part[j] = [col_head[j]] + p
             parts += part
         msg += print_table(parts)
         return msg
