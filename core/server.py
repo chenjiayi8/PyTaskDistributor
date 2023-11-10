@@ -108,9 +108,11 @@ class Server:
     def kill_residual_sessions(self):
         # kill existing processes
         for _, v in self.status_dict["current_sessions"].items():
-            os.system("kill -9 {}".format(v["pid"]))
+            if v["pid"] > 0:
+                os.system("kill -9 {}".format(v["pid"]))
 
         self.status_dict["current_sessions"].clear()
+        self.status_dict["num_running"] = 0
 
     def kill_all_sessions(self):
         # kill all matlab processes
