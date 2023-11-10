@@ -41,6 +41,8 @@ def is_server_state(_input):
 
 
 class Monitor:
+    """Monitor the progress of the master."""
+
     def __init__(self, master):
         self.master = master
         self.columns_server = [
