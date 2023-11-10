@@ -6,20 +6,20 @@ Created on Fri Jun 11 00:38:06 2021
 @author: frank
 """
 
-import os
 from datetime import datetime
 
-from dateutil import parser
 import pandas as pd
-import tabulate as tb
+from dateutil import parser
 
-from PyTaskDistributor.util.json import read_json_to_df2 as read_json_to_df
 from PyTaskDistributor.util.others import print_table
 
 
 def parse_time(t):
-    if type(t) == str:
+    """Parse time to string."""
+    if isinstance(t, str):
         t = parser.isoparse(t)
+    elif isinstance(t, float):
+        t = datetime.fromtimestamp(t)
     return datetime.strftime(t, "%d/%m/%Y %H:%M:%S")
 
 
