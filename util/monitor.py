@@ -31,6 +31,7 @@ def get_time_str(task):
 
 
 def get_duplicated_items(lst1, lst2):
+    """Get duplicated items from two lists."""
     return set(lst1) & set(lst2)
 
 
