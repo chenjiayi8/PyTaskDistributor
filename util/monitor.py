@@ -67,14 +67,13 @@ class Monitor:
             "num_finished",
             "updated_time",
         ]
-        pass
 
-    def print_progress(self, num_mins=5):
-        msg = "Updated on {} and will reload in {} mins \n".format(
-            parse_time(datetime.now()), num_mins
-        )
-        msg += self.print_task_progress()
-        msg += self.print_server_progress()
+    def check_progress(self, tasks: dict, servers: list, num_mins: int = 5):
+        """Check the progress of the master."""
+        time_str = parse_time(datetime.now())
+        msg = f"Updated on {time_str} and will reload in {num_mins} mins \n"
+        msg += self.check_task_progress(tasks, servers)
+        msg += self.check_server_progress(servers)
         return msg
 
     def check_task_progress(self, tasks: dict, servers: list):
